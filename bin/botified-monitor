@@ -1,0 +1,133 @@
+#!/bin/sh
+set -u
+
+base_url="${BOTIFIED_BASE_URL:-http://127.0.0.1:17777}"
+service_key="${BOTIFIED_SERVICE_KEY:-}"
+curl_bin="${BOTIFIED_CURL:-curl}"
+interval="${BOTIFIED_MONITOR_INTERVAL_SECS:-1}"
+
+base_url=${base_url%/}
+
+usage() {
+	cat <<'EOF'
+usage: botified-monitor
+
+Continuous curl-based monitor for public Botified NDJSON events.
+
+Environment:
+  BOTIFIED_BASE_URL              Service URL. Default: http://127.0.0.1:17777
+  BOTIFIED_SERVICE_KEY           Optional bearer token.
+  BOTIFIED_CURL                  Optional curl binary path. Default: curl
+  BOTIFIED_MONITOR_INTERVAL_SECS Poll interval. Default: 1
+EOF
+}
+
+log() {
+	printf 'botified-monitor: %s\n' "$*" >&2
+}
+
+fail() {
+	log "$*"
+	exit 1
+}
+
+check_curl() {
+	command -v "$curl_bin" >/dev/null 2>&1 || {
+		log "curl command not found: $curl_bin"
+		exit 127
+	}
+}
+
+json_number_field() {
+	field=$1
+	sed -n "s/.*\"$field\"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p" | sed -n '1p'
+}
+
+get_state() {
+	if [ -n "$service_key" ]; then
+		"$curl_bin" -fsS "$base_url/v1/state" \
+			-H "Authorization: Bearer $service_key"
+	else
+		"$curl_bin" -fsS "$base_url/v1/state"
+	fi
+}
+
+get_events_snapshot() {
+	cursor=$1
+	headers=$2
+	body=$3
+	if [ -n "$service_key" ]; then
+		"$curl_bin" -fsS -D "$headers" -o "$body" \
+			"$base_url/v1/events?cursor=$cursor&follow=false" \
+			-H "Authorization: Bearer $service_key"
+	else
+		"$curl_bin" -fsS -D "$headers" -o "$body" \
+			"$base_url/v1/events?cursor=$cursor&follow=false"
+	fi
+}
+
+next_cursor_from_headers() {
+	awk '
+		{
+			name = tolower($1)
+			sub(/:$/, "", name)
+			if (name == "x-botified-next-cursor") {
+				sub(/^[^:]*:[[:space:]]*/, "")
+				sub(/\r$/, "")
+				print
+			}
+		}
+	' "$1" | sed -n '$p'
+}
+
+case "${1:-}" in
+	-h|--help)
+		usage
+		exit 0
+		;;
+	"")
+		;;
+	*)
+		usage >&2
+		exit 2
+		;;
+esac
+
+check_curl
+
+tmpdir=$(mktemp -d 2>/dev/null || mktemp -d -t botified-monitor)
+trap 'rm -rf "$tmpdir"' EXIT
+trap 'exit 130' HUP INT TERM
+headers="$tmpdir/headers"
+body="$tmpdir/body"
+
+state=$(get_state) || fail "failed to read $base_url/v1/state"
+last_event_seq=$(printf '%s' "$state" | json_number_field last_event_seq)
+if [ -z "$last_event_seq" ]; then
+	log "state response did not include last_event_seq"
+	printf '%s\n' "$state" >&2
+	exit 1
+fi
+
+cursor="evt_$last_event_seq"
+log "monitoring $base_url from $cursor"
+
+while :; do
+	: > "$headers"
+	: > "$body"
+	if ! get_events_snapshot "$cursor" "$headers" "$body"; then
+		log "event poll failed for cursor $cursor; retrying in $interval seconds"
+		sleep "$interval"
+		continue
+	fi
+
+	cat "$body"
+	next_cursor=$(next_cursor_from_headers "$headers")
+	if [ -z "$next_cursor" ]; then
+		log "event response did not include x-botified-next-cursor"
+		exit 1
+	fi
+
+	cursor=$next_cursor
+	sleep "$interval"
+done

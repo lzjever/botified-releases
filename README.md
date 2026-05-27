@@ -23,6 +23,13 @@ By default, the binary is installed to:
 ~/.local/bin/botified
 ```
 
+The installer also installs two curl-based helper tools:
+
+```sh
+~/.local/bin/botified-chat
+~/.local/bin/botified-monitor
+```
+
 If your shell cannot find `botified`, add this to your shell startup file:
 
 ```sh
@@ -39,7 +46,7 @@ printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> ~/.bashrc
 ## Install A Specific Version
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_VERSION=v0.2.0 sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_VERSION=v0.2.1 sh
 ```
 
 ## Custom Install Directory
@@ -54,9 +61,38 @@ Use a directory that your user can write to, or run with the required permission
 
 ```sh
 botified --help
+botified-chat --help
+botified-monitor --help
 ```
 
 Checksums are published in each release as `SHA256SUMS`. The installer verifies checksums automatically when `sha256sum` is available.
+
+## Quick Service Testing
+
+Both helper tools use the same environment:
+
+```sh
+export BOTIFIED_BASE_URL=http://127.0.0.1:17777
+export BOTIFIED_SERVICE_KEY=dev
+```
+
+If your Botified service has no service key configured, leave
+`BOTIFIED_SERVICE_KEY` unset.
+
+Interactive message loop:
+
+```sh
+botified-chat
+```
+
+Continuous public event monitor:
+
+```sh
+botified-monitor
+```
+
+Both tools write public Botified NDJSON events to stdout and status/errors to
+stderr, so the output can be parsed by other clients.
 
 ## Current Assets
 
@@ -64,4 +100,6 @@ Each release publishes:
 
 - `botified-linux-x86_64-gnu`
 - `botified-linux-aarch64-gnu`
+- `botified-chat`
+- `botified-monitor`
 - `SHA256SUMS`

@@ -5,6 +5,7 @@ repo="${BOTIFIED_RELEASES_REPO:-lzjever/botified-releases}"
 version="${BOTIFIED_VERSION:-latest}"
 install_dir="${BOTIFIED_INSTALL_DIR:-$HOME/.local/bin}"
 bin_name="${BOTIFIED_BIN_NAME:-botified}"
+script_assets="botified-chat botified-monitor"
 
 log() {
 	printf '%s\n' "$*"
@@ -70,6 +71,9 @@ log "Installing botified from $repo ($version)"
 log "Detected target: $asset"
 
 download "$base_url/$asset" "$tmpdir/$asset"
+for script_asset in $script_assets; do
+	download "$base_url/$script_asset" "$tmpdir/$script_asset"
+done
 download "$base_url/SHA256SUMS" "$tmpdir/SHA256SUMS"
 
 if command -v sha256sum >/dev/null 2>&1; then
@@ -77,6 +81,10 @@ if command -v sha256sum >/dev/null 2>&1; then
 		cd "$tmpdir"
 		grep "  $asset\$" SHA256SUMS > "$asset.sha256" || fail "checksum for $asset not found"
 		sha256sum -c "$asset.sha256" >/dev/null
+		for script_asset in $script_assets; do
+			grep "  $script_asset\$" SHA256SUMS > "$script_asset.sha256" || fail "checksum for $script_asset not found"
+			sha256sum -c "$script_asset.sha256" >/dev/null
+		done
 	)
 	log "Checksum verified."
 else
@@ -86,12 +94,22 @@ fi
 mkdir -p "$install_dir"
 if command -v install >/dev/null 2>&1; then
 	install -m 0755 "$tmpdir/$asset" "$install_dir/$bin_name"
+	for script_asset in $script_assets; do
+		install -m 0755 "$tmpdir/$script_asset" "$install_dir/$script_asset"
+	done
 else
 	cp "$tmpdir/$asset" "$install_dir/$bin_name"
 	chmod 0755 "$install_dir/$bin_name"
+	for script_asset in $script_assets; do
+		cp "$tmpdir/$script_asset" "$install_dir/$script_asset"
+		chmod 0755 "$install_dir/$script_asset"
+	done
 fi
 
 log "Installed: $install_dir/$bin_name"
+for script_asset in $script_assets; do
+	log "Installed: $install_dir/$script_asset"
+done
 
 case ":$PATH:" in
 	*":$install_dir:"*)
