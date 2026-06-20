@@ -23,13 +23,6 @@ By default, the binary is installed to:
 ~/.local/bin/botified
 ```
 
-The installer also installs two curl-based helper tools:
-
-```sh
-~/.local/bin/botified-chat
-~/.local/bin/botified-monitor
-```
-
 If your shell cannot find `botified`, add this to your shell startup file:
 
 ```sh
@@ -61,38 +54,32 @@ Use a directory that your user can write to, or run with the required permission
 
 ```sh
 botified --help
-botified-chat --help
-botified-monitor --help
 ```
 
 Checksums are published in each release as `SHA256SUMS`. The installer verifies checksums automatically when `sha256sum` is available.
 
 ## Quick Service Testing
 
-Both helper tools use the same environment:
+Use curl examples against the HTTP API:
 
 ```sh
-export BOTIFIED_BASE_URL=http://127.0.0.1:17777
-export BOTIFIED_SERVICE_KEY=dev
+BASE=http://127.0.0.1:17777
+AUTH='Authorization: Bearer dev'
+curl -s "$BASE/healthz"
+curl -s "$BASE/v1/state" -H "$AUTH" \
+  | jq '{state, queue_length, tasks, last_error, session_id, timeline_cursor}'
+CURSOR=$(curl -s -X POST "$BASE/v1/messages" \
+  -H "$AUTH" \
+  -H 'Content-Type: application/json' \
+  -d '{"client_message_id":"demo-1","text":"Reply in one short sentence."}' \
+  | jq -r .timeline_cursor)
+curl -s -D headers.txt "$BASE/v1/timeline?cursor=$CURSOR&follow=false" -H "$AUTH"
+NEXT=$(awk 'BEGIN { IGNORECASE=1 } /^x-botified-next-cursor:/ { print $2 }' headers.txt | tr -d '\r')
+curl -N "$BASE/v1/timeline?cursor=$NEXT&follow=true" -H "$AUTH"
 ```
 
 If your Botified service has no service key configured, leave
-`BOTIFIED_SERVICE_KEY` unset.
-
-Interactive message loop:
-
-```sh
-botified-chat
-```
-
-Continuous public event monitor:
-
-```sh
-botified-monitor
-```
-
-Both tools write public Botified NDJSON events to stdout and status/errors to
-stderr, so the output can be parsed by other clients.
+the `Authorization` header out.
 
 ## Current Assets
 
@@ -100,6 +87,4 @@ Each release publishes:
 
 - `botified-linux-x86_64-gnu`
 - `botified-linux-aarch64-gnu`
-- `botified-chat`
-- `botified-monitor`
 - `SHA256SUMS`
