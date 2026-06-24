@@ -233,7 +233,7 @@
       </section>
 
       <section class="section" id="access">
-        <div class="section-head"><div><div class="kicker">Access Model</div><h2>最低接入心智负担</h2></div><p>接入路径面向算法、应用和本体服务已有工作流设计，先托管、再交互、最后沉淀 skill。</p></div>
+        <div class="section-head"><div><div class="kicker">Access Model</div><h2>低成本接入路径</h2></div><p>接入路径贴合算法、应用和本体服务已有工作流：先托管、再交互、最后沉淀 skill。</p></div>
         <div class="access-grid">
           <div class="paper-card wide-card"><p>Botified 的最低接入成本不是“写插件/写技能”。非交互 CLI、脚本、本地命令可以保持现有 <code>argv</code>、<code>env</code>、<code>cwd</code>、<code>stdout</code>、<code>stderr</code>、exit code、shell pipeline 和 curl 调试方式，由 Botified 托管进程生命周期、tail、artifact、callback、cancel 和 timeline。只有当程序确实需要在执行期请求上层判断时，才选择性增加一个 stdout request envelope 和一个 stdin response envelope：打印 <code>&lt;botified&gt;{...}&lt;/botified&gt;</code>，读取 <code>&lt;botified_response&gt;{...}&lt;/botified_response&gt;</code>。不要求 SDK，不要求把算法模块改成 server，也不要求先迁移到复杂插件生态或配合写SKILL。</p></div>
           <div class="paper-card wide-card"><h3>接入梯度</h3><div class="mini-list"><div><strong>0 改造：</strong>普通 CLI 先作为 task 被托管，获得 tail、artifact、exit code 和 timeline。</div><div><strong>低改造：</strong>detached task 获得 task id、cancel、callback 和状态观测。</div><div><strong>按需改造：</strong>interactive stdio 用 <code>&lt;botified&gt;</code> / <code>&lt;botified_response&gt;</code> 处理运行中反问。</div></div></div>
@@ -468,7 +468,7 @@
       <div class="section-mark">C</div>
       <div>
         <p class="eyebrow">Claims 19-29</p>
-        <h2>交互式 stdio 与低心智接入</h2>
+        <h2>交互式 stdio 与低成本接入</h2>
         <p>让算法模块继续按 CLI/stdio 工作，只在需要高层判断时显式请求 Agent，降低接入和调试成本。</p>
       </div>
     </div>
@@ -857,7 +857,7 @@
   </section>
 
       <section class="section" id="thesis">
-        <div class="section-head"><div><div class="kicker">Closing Thesis</div><h2>可以用于汇报开场的技术主张</h2></div><p>这部分保留原文可用于开场或收束的技术主张。</p></div>
+        <div class="section-head"><div><div class="kicker">Closing Thesis</div><h2>Botified 的核心技术主张</h2></div><p>这组主张说明 Botified 如何把机器人本体侧 Agent 从聊天式工具调用推进到可托管、可观测、可复盘的执行期 runtime。</p></div>
         <div class="paper-card thesis-card"><p>Botified 的原创性不在某一个单点 API，而在一组面向机器人本体执行的组合设计：单 active agent loop、统一多源输入队列、后台化长任务、异步事件回流、task request/task reply 交互式 stdio、bounded output、durable accept、commit/rollback、timeline/state/active_items、provider capability routing、KV cache/cost gate、single-binary release，以及 LLM/controller/tool 的职责分层。  </p>
 <p>这组设计把机器人 Agent 从“会调用工具的聊天程序”推进到“可以托管长任务、接收运行中反问、响应插话、保留调试事实、优化长期运行成本、并与 controller 解耦协作的本体侧运行时”。对公司内部同事的关键价值不是要求他们迁移开发范式，而是在现有 CLI、脚本、本体服务和控制面之上增加统一的 Agent 协调协议。</p></div>
       </section>
@@ -866,7 +866,7 @@
         <div class="section-head"><div><div class="kicker">Evidence Index</div><h2>证据索引</h2></div><p>公开页面保留内部源码路径文本；README.md 和 install.sh 为公开 release 仓库链接。</p></div>
         <div class="evidence-grid"><div class="evidence-card"><div class="evidence-index">01</div><p>交互式 stdio 协议、frame 规则、urgency 边界和 limits：<code>内部源码路径: botified/docs/ops-manual.md</code></p></div><div class="evidence-card"><div class="evidence-index">02</div><p>用户输入、urgency、队列、abort 和 timeline 用法：<code>内部源码路径: botified/docs/user-manual.md</code></p></div><div class="evidence-card"><div class="evidence-index">03</div><p>task state、callback delivery、frame parser、request limits、bounded output：<code>内部源码路径: botified/src/tasks.rs</code></p></div><div class="evidence-card"><div class="evidence-index">04</div><p>service queue、durable accept、commit/rollback、state bootstrap、callback retry：<code>内部源码路径: botified/src/service.rs</code></p></div><div class="evidence-card"><div class="evidence-index">05</div><p>detached task ack、background task execution、timeout/cancel policy：<code>内部源码路径: botified/src/agent_loop.rs</code></p></div><div class="evidence-card"><div class="evidence-index">06</div><p>bash tool schema、<code>interactive_stdio</code> opt-in 语义：<code>内部源码路径: botified/src/tools/bash.rs</code></p></div><div class="evidence-card"><div class="evidence-index">07</div><p>provider capability routing 和多模型适配测试：<code>内部源码路径: botified/tests/provider_router.rs</code></p></div><div class="evidence-card"><div class="evidence-index">08</div><p>provider usage、cached token 和 reasoning token 统计：<code>内部源码路径: botified/src/provider/openai_chat.rs</code>、<code>内部源码路径: botified/tests/agent_loop.rs</code></p></div><div class="evidence-card"><div class="evidence-index">09</div><p>release smoke 和机器人侧架构目标：<code>内部源码路径: botified/tests/release_smoke.rs</code>、<code>内部源码路径: botified/Makefile</code></p></div><div class="evidence-card"><div class="evidence-index">10</div><p>public release 和一键安装脚本：<a href="README.md"><code>README.md</code></a>、<a href="install.sh"><code>install.sh</code></a></p></div><div class="evidence-card"><div class="evidence-index">11</div><p>关键测试覆盖：<code>内部源码路径: botified/tests/service_queue.rs</code>、<code>内部源码路径: botified/tests/background_execution.rs</code>、<code>内部源码路径: botified/tests/task_tools.rs</code>、<code>内部源码路径: botified/tests/http_service.rs</code></p></div></div>
       </section>
-      <footer>Generated from botified-robot-runtime-50-technical-claims.md · Botified robot-side runtime technical brief</footer>
+      <footer>Botified robot-side runtime technical brief</footer>
     </main>
   </div>
   <div class="actions"><button id="expandAll">Expand all</button><button id="collapseAll">Collapse all</button><button id="topBtn">Top</button></div>
