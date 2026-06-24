@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Botified Robot-side Agent Runtime</title>
+  <style>
+    :root {
+      --paper: #f6f0e7;
+      --ink: #25211c;
+      --muted: #675d51;
+      --line: #d8cab8;
+      --olive: #6d7358;
+      --steel: #526872;
+      --clay: #a75d4d;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      padding: 48px 24px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.36), transparent 28%, transparent 74%, rgba(82,104,114,0.06)),
+        radial-gradient(circle at 18% 14%, rgba(167,93,77,0.10), transparent 28%),
+        radial-gradient(circle at 84% 76%, rgba(109,115,88,0.12), transparent 34%),
+        var(--paper);
+    }
+
+    main {
+      width: min(100%, 1040px);
+    }
+
+    .eyebrow {
+      margin: 0 0 18px;
+      color: var(--steel);
+      font: 600 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 780px;
+      margin: 0;
+      font-size: clamp(42px, 7vw, 78px);
+      line-height: 1.02;
+      letter-spacing: -0.02em;
+    }
+
+    .intro {
+      max-width: 780px;
+      margin: 26px 0 0;
+      color: var(--muted);
+      font-size: 22px;
+      line-height: 1.65;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+      margin-top: 42px;
+    }
+
+    .card {
+      min-height: 280px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.42);
+      box-shadow: 0 22px 54px rgba(82, 62, 38, 0.08);
+      text-decoration: none;
+      color: inherit;
+      transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+
+    .card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(82,104,114,0.48);
+      background: rgba(255,255,255,0.58);
+    }
+
+    .label {
+      display: inline-flex;
+      margin-bottom: 20px;
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--steel);
+      font: 600 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .card h2 {
+      margin: 0;
+      font-size: 31px;
+      line-height: 1.18;
+      letter-spacing: -0.01em;
+    }
+
+    .card p {
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1.62;
+    }
+
+    .action {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 26px;
+      color: var(--clay);
+      font: 700 15px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: 0.02em;
+    }
+
+    .install {
+      margin-top: 34px;
+      padding: 22px 24px;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--olive);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.36);
+    }
+
+    .install p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.55;
+    }
+
+    code {
+      display: block;
+      overflow-x: auto;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(216,202,184,0.34);
+      color: #2b3028;
+      font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: nowrap;
+    }
+
+    footer {
+      margin-top: 30px;
+      color: #817569;
+      font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 32px 16px;
+      }
+
+      .cards {
+        grid-template-columns: 1fr;
+      }
+
+      .card {
+        min-height: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Botified Releases</p>
+    <h1>Robot-side Agent Runtime</h1>
+    <p class="intro">
+      Botified 是机器人本体侧的常驻 Agent 协调层。它把用户插话、长任务、算法反问、控制回调和现场观测收敛成可排队、可追踪、可复盘的运行时契约。
+    </p>
+
+    <section class="cards" aria-label="Botified materials">
+      <a class="card" href="botified-robot-runtime-slides.html">
+        <span class="label">Product Capability</span>
+        <h2>产品能力说明</h2>
+        <p>
+          这份材料偏向产品能力和使用场景，重点解释 Botified 能为机器人侧 Agent 带来什么：如何处理中途插话、长任务回流、脚本反问、现场状态面板和试点接入。
+        </p>
+        <span class="action">打开 slides →</span>
+      </a>
+
+      <a class="card" href="botified-robot-runtime-technical-claims.html">
+        <span class="label">Engineering Details</span>
+        <h2>工程成熟度与技术方案</h2>
+        <p>
+          这份材料偏向工程成熟度、技术方案和技术细节，重点说明 runtime 的队列语义、任务生命周期、stdio 协议、观测接口、资源边界、发布验证和证据索引。
+        </p>
+        <span class="action">打开技术说明 →</span>
+      </a>
+    </section>
+
+    <section class="install" aria-label="Install command">
+      <p>安装当前公开 release：</p>
+      <code>curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | sh</code>
+    </section>
+
+    <footer>
+      Public release and promotion page for Botified.
+    </footer>
+  </main>
+</body>
+</html>

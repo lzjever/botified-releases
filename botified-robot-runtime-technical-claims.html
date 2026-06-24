@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Botified Robot-side Runtime 技术主张</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --stage-bg: #e7ded1;
+      --paper: #f5f0e8;
+      --paper-deep: #ece4d8;
+      --paper-soft: #faf7f1;
+      --ink: #24201b;
+      --muted: #6d6257;
+      --faint: #928579;
+      --line: #d8ccbc;
+      --line-dark: #c2b49f;
+      --olive: #6f7358;
+      --steel: #53656e;
+      --clay: #a85b4b;
+      --brass: #b58b4a;
+      --charcoal: #34302a;
+      --font-display: "Playfair Display", "Noto Serif SC", serif;
+      --font-serif: "Noto Serif SC", serif;
+      --font-mono: "JetBrains Mono", monospace;
+      --shadow: 0 22px 60px rgba(84,65,42,0.10);
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; background: var(--stage-bg); }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 0%, rgba(181,139,74,0.16), transparent 32rem),
+        radial-gradient(circle at 90% 8%, rgba(83,101,110,0.14), transparent 34rem),
+        linear-gradient(90deg, rgba(255,255,255,0.42), transparent 18%, transparent 82%, rgba(126,105,77,0.06)),
+        var(--paper);
+      font-family: var(--font-serif);
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(36,32,27,0.023) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(36,32,27,0.018) 1px, transparent 1px);
+      background-size: 64px 64px;
+      opacity: 0.55;
+      z-index: -1;
+    }
+    a { color: var(--steel); text-decoration: none; border-bottom: 1px solid rgba(83,101,110,0.35); }
+    a:hover { color: var(--clay); border-bottom-color: rgba(168,91,75,0.45); }
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      color: #2b3028;
+      background: rgba(236,228,216,0.82);
+      border: 1px solid rgba(194,180,159,0.55);
+      border-radius: 4px;
+      padding: 0.08em 0.32em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .page-shell { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 42px; max-width: 1580px; margin: 0 auto; padding: 34px 44px 90px; }
+    .page-shell > *, .main, .paper-card, .summary-card, .claim-card, .evidence-card { min-width: 0; }
+    .side-nav { position: sticky; top: 24px; align-self: start; padding: 26px 20px; border: 1px solid var(--line); background: rgba(250,247,241,0.70); backdrop-filter: blur(12px); border-radius: 8px; box-shadow: 0 16px 42px rgba(84,65,42,0.06); }
+    .brand { font-family: var(--font-display); font-size: 28px; line-height: 1.08; margin-bottom: 18px; }
+    .nav-note { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; color: var(--faint); text-transform: uppercase; margin-bottom: 18px; }
+    .progress-line { height: 3px; background: rgba(36,32,27,0.12); border-radius: 999px; overflow: hidden; margin-bottom: 22px; }
+    .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--olive), var(--steel), var(--brass)); border-radius: 999px; }
+    .side-nav a { display: flex; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 0; border-left: 3px solid transparent; border-radius: 4px; color: var(--muted); font-family: var(--font-mono); font-size: 13px; line-height: 1.2; }
+    .side-nav a:hover, .side-nav a.active { color: var(--ink); background: rgba(236,228,216,0.72); border-left-color: var(--steel); }
+    .main { min-width: 0; }
+    .hero { min-height: 640px; display: grid; grid-template-columns: minmax(0,1.08fr) minmax(360px,0.92fr); gap: 56px; align-items: center; padding: 86px 0 64px; border-bottom: 1px solid var(--line); }
+    .kicker { font-family: var(--font-mono); font-size: 15px; letter-spacing: 0.16em; color: var(--steel); text-transform: uppercase; margin-bottom: 22px; }
+    h1, h2, h3 { font-family: var(--font-display); margin: 0; color: var(--ink); letter-spacing: -0.014em; }
+    h1 { font-size: clamp(58px, 7vw, 116px); line-height: 0.98; }
+    h2 { font-size: clamp(38px, 4vw, 62px); line-height: 1.08; }
+    h3 { font-size: 30px; line-height: 1.18; }
+    p { font-size: 20px; line-height: 1.72; color: var(--muted); margin: 0; }
+    .lead { margin-top: 30px; font-size: 27px; line-height: 1.55; color: var(--charcoal); max-width: 860px; }
+    .hero-panel { border: 1px solid var(--line-dark); background: rgba(250,247,241,0.68); border-radius: 8px; padding: 30px; box-shadow: var(--shadow); }
+    .metric-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 14px; margin-top: 24px; }
+    .metric { min-height: 112px; border: 1px solid var(--line); background: rgba(236,228,216,0.44); border-radius: 6px; padding: 18px; }
+    .metric .value { font-family: var(--font-display); font-size: 44px; line-height: 1; color: var(--ink); }
+    .metric .label { margin-top: 9px; font-family: var(--font-mono); color: var(--steel); font-size: 13px; letter-spacing: 0.03em; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+    .pill { display: inline-flex; align-items: center; min-height: 34px; padding: 0 13px; border: 1px solid var(--line-dark); border-radius: 999px; font-family: var(--font-mono); font-size: 13px; color: var(--steel); background: rgba(236,228,216,0.72); }
+    .section { padding: 72px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 24px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+    .section-head p { max-width: 620px; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+    .summary-card, .paper-card { background: rgba(250,247,241,0.72); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 16px 42px rgba(84,65,42,0.06); }
+    .summary-card { padding: 26px; min-height: 245px; }
+    .summary-card h3 { font-size: 28px; margin-bottom: 14px; }
+    .summary-card p { font-size: 18px; line-height: 1.58; }
+    .matrix-wrap { overflow-x: auto; border: 1px solid var(--line-dark); border-radius: 8px; background: rgba(250,247,241,0.68); box-shadow: var(--shadow); }
+    table { border-collapse: collapse; width: 100%; }
+    .positioning-table th, .positioning-table td { padding: 22px 24px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); font-size: 19px; line-height: 1.55; color: var(--muted); }
+    .positioning-table th { font-family: var(--font-display); font-size: 27px; color: var(--ink); background: rgba(236,228,216,0.72); }
+    .positioning-table td.dim { width: 170px; font-family: var(--font-mono); font-size: 15px; color: var(--steel); text-transform: uppercase; letter-spacing: 0.04em; }
+    .access-grid, .maturity-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .wide-card { padding: 30px 34px; }
+    .wide-card p + p { margin-top: 18px; }
+    .mini-list { display: grid; gap: 14px; margin-top: 20px; }
+    .mini-list div { border-left: 5px solid var(--olive); background: rgba(236,228,216,0.45); border-radius: 6px; padding: 16px 18px; color: var(--muted); font-size: 18px; line-height: 1.5; }
+    .maturity-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .maturity-card { padding: 26px; border-top: 5px solid var(--steel); }
+    .maturity-card:nth-child(2) { border-top-color: var(--olive); }
+    .maturity-card:nth-child(3) { border-top-color: var(--brass); }
+    .maturity-card h3 { font-size: 27px; margin-bottom: 12px; }
+    .claim-section { padding: 74px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 24px; }
+    .claim-section-header { display: grid; grid-template-columns: 92px 1fr; gap: 24px; margin-bottom: 26px; align-items: stretch; }
+    .section-mark { display: flex; align-items: center; justify-content: center; border: 1px solid var(--line-dark); border-radius: 8px; background: rgba(236,228,216,0.72); font-family: var(--font-display); font-size: 58px; color: var(--ink); }
+    .claim-section-header > div:not(.section-mark) { padding: 24px 30px; border: 1px solid var(--line); background: rgba(250,247,241,0.68); border-radius: 8px; }
+    .claim-section-header > div:not(.section-mark) p { margin-top: 12px; font-size: 19px; }
+    .eyebrow { font-family: var(--font-mono); font-size: 13px; color: var(--steel); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+    .claims-list { display: grid; gap: 12px; }
+    .claim-card { border: 1px solid var(--line); border-radius: 8px; background: rgba(250,247,241,0.72); box-shadow: 0 10px 28px rgba(84,65,42,0.045); overflow: hidden; }
+    .claim-card summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(150px, auto); gap: 18px; align-items: center; padding: 20px 24px; }
+    .claim-card summary::-webkit-details-marker { display: none; }
+    .claim-card[open] summary { border-bottom: 1px solid var(--line); background: rgba(236,228,216,0.38); }
+    .claim-num { font-family: var(--font-mono); color: var(--brass); font-size: 16px; }
+    .claim-title { font-family: var(--font-display); font-size: 25px; color: var(--ink); line-height: 1.24; }
+    .claim-tags { display: flex; justify-content: end; flex-wrap: wrap; gap: 7px; }
+    .claim-tags span { font-family: var(--font-mono); font-size: 11px; color: var(--steel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px; background: rgba(250,247,241,0.7); white-space: nowrap; }
+    .claim-body { padding: 24px 30px 28px 106px; max-width: 1040px; }
+    .claim-body p { font-size: 19px; line-height: 1.72; }
+    .boundary { margin-top: 18px; padding: 14px 16px; border-left: 5px solid var(--clay); background: rgba(236,228,216,0.55); border-radius: 6px; color: var(--muted); font-size: 17px; line-height: 1.48; }
+    .boundary span { font-family: var(--font-mono); color: var(--clay); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 10px; }
+    .thesis-card { padding: 42px 48px; border-left: 8px solid var(--brass); }
+    .thesis-card p { font-size: 24px; line-height: 1.72; color: var(--charcoal); }
+    .thesis-card p + p { margin-top: 22px; }
+    .evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .evidence-card { display: grid; grid-template-columns: 54px 1fr; gap: 16px; border: 1px solid var(--line); border-radius: 8px; background: rgba(250,247,241,0.72); padding: 18px; }
+    .evidence-index { font-family: var(--font-mono); color: var(--brass); }
+    .evidence-card p { font-size: 17px; line-height: 1.55; overflow-wrap: anywhere; }
+    .actions { position: fixed; right: 24px; bottom: 24px; z-index: 10; display: flex; gap: 10px; }
+    .actions button { border: 1px solid var(--line-dark); background: rgba(250,247,241,0.86); color: var(--ink); border-radius: 999px; padding: 10px 14px; font-family: var(--font-mono); font-size: 12px; cursor: pointer; box-shadow: 0 12px 32px rgba(84,65,42,0.08); }
+    .actions button:hover { background: var(--paper-soft); }
+    footer { padding: 42px 0 0; color: var(--faint); font-family: var(--font-mono); font-size: 12px; }
+    @media (max-width: 1180px) {
+      .page-shell { grid-template-columns: 1fr; padding: 24px 22px 80px; }
+      .side-nav { position: static; display: block; }
+      .side-nav .links { display: flex; flex-wrap: wrap; gap: 4px; }
+      .side-nav a { width: auto; }
+      .hero { grid-template-columns: 1fr; min-height: auto; }
+      .summary-grid, .maturity-grid { grid-template-columns: repeat(2,1fr); }
+      .access-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 760px) {
+      .page-shell { padding-inline: 16px; }
+      h1 { font-size: 54px; }
+      .lead { font-size: 22px; }
+      .summary-grid, .maturity-grid, .evidence-grid { grid-template-columns: 1fr; }
+      .metric-grid { grid-template-columns: 1fr; }
+      .claim-card summary { grid-template-columns: 46px 1fr; }
+      .claim-tags { grid-column: 2; justify-content: start; }
+      .claim-body { padding: 20px 22px; }
+      .claim-section-header { grid-template-columns: 1fr; }
+      .section-mark { height: 82px; }
+      .actions { left: 16px; right: 16px; justify-content: center; }
+    }
+    @media print {
+      .side-nav, .actions { display: none; }
+      .page-shell { display: block; max-width: 100%; padding: 0; }
+      body { background: white; }
+      .claim-card { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <aside class="side-nav">
+      <div class="brand">Botified<br>Runtime</div>
+      <div class="nav-note">technical claims</div>
+      <div class="progress-line"><div class="progress-fill" id="progressFill"></div></div>
+      <nav class="links"><a href="#overview"><span>Overview</span></a>
+<a href="#matrix"><span>Positioning Matrix</span></a>
+<a href="#access"><span>Access Model</span></a>
+<a href="#maturity"><span>Engineering Evidence</span></a>
+<a href="#section-A"><span>A / 1-8</span></a>
+<a href="#section-B"><span>B / 9-18</span></a>
+<a href="#section-C"><span>C / 19-29</span></a>
+<a href="#section-D"><span>D / 30-38</span></a>
+<a href="#section-E"><span>E / 39-44</span></a>
+<a href="#section-F"><span>F / 45-50</span></a>
+<a href="#thesis"><span>Closing Thesis</span></a>
+<a href="#evidence"><span>Evidence Index</span></a></nav>
+    </aside>
+    <main class="main">
+      <header class="hero" id="overview">
+        <div>
+          <div class="kicker">Robot-side Agent Runtime</div>
+          <h1>Botified 技术主张</h1>
+          <p class="lead">Botified 的原创性不在某一个单点 API，而在一组面向机器人本体执行的组合设计：把多源输入、后台任务、运行中反问、可靠队列、可观测事实和模型成本收敛到一个常驻 runtime 契约中。</p>
+          <div class="pill-row">
+            <span class="pill">single active loop</span><span class="pill">detached task</span><span class="pill">task request / reply</span><span class="pill">state / timeline</span><span class="pill">controller boundary</span><span class="pill">single binary</span>
+          </div>
+        </div>
+        <div class="hero-panel">
+          <div class="kicker">Document Map</div>
+          <h2>50 条 claim，6 个技术主题</h2>
+          <div class="metric-grid">
+            <div class="metric"><div class="value">50</div><div class="label">technical claims</div></div>
+            <div class="metric"><div class="value">6</div><div class="label">runtime themes</div></div>
+            <div class="metric"><div class="value">A-F</div><div class="label">navigable sections</div></div>
+            <div class="metric"><div class="value">11</div><div class="label">evidence items</div></div>
+          </div>
+        </div>
+      </header>
+
+      <section class="section" id="summary">
+        <div class="section-head"><div><div class="kicker">Overview</div><h2>先建立阅读坐标</h2></div><p>下面四块把长文的核心定位、接入方式、runtime 契约和工程成熟度先压缩到一屏，后续章节保留完整细节。</p></div>
+        <div class="summary-grid">
+          <div class="summary-card"><h3>Core Position</h3><p>Botified 是机器人本体侧或受控控制网络内的常驻 runtime，不是 chat-first 应用。它处理多源事件、排队、后台任务、状态和结果回流。</p></div>
+          <div class="summary-card"><h3>Access Cost</h3><p>最低接入不是写插件。非交互 CLI、脚本、本地命令和 curl 调试方式可以继续保留；interactive stdio 只在执行期确实需要 Agent 判断时 opt-in。</p></div>
+          <div class="summary-card"><h3>Runtime Contract</h3><p>核心契约包括单 active loop、统一输入队列、detached task、callback、cancel、tail/artifact、<code>/v1/state</code> 和 <code>/v1/timeline</code>。</p></div>
+          <div class="summary-card"><h3>Engineering Maturity</h3><p>single binary、x86_64 / aarch64、botified-tui 自举经验、provider usage / cached token / reasoning token 和成本观测共同构成交付基础。</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="matrix">
+        <div class="section-head"><div><div class="kicker">Positioning Matrix</div><h2>与通用 Agent 的职责分层</h2></div><p>这张矩阵保留原始文档中的职责分层，用来说明 Botified 与入口侧通用 Agent 的部署层分工。</p></div>
+        <div class="matrix-wrap"><table class="positioning-table"><thead><tr><th>维度</th><th>通用 Agent 类方案，例如 OpenClaw/NanoClaw</th><th>Botified</th></tr></thead><tbody><tr><td class="dim">主要部署位置</td><td>泛入口、跨域任务编排、工具生态整合</td><td>机器人本体侧或受控控制网络内的常驻 runtime</td></tr><tr><td class="dim">主要事件源</td><td>人的请求和工具调用结果</td><td>用户消息、任务回调、task request，以及经 <code>/v1/messages</code>、task callback 或 task request 适配后的控制面事件</td></tr><tr><td class="dim">长任务抽象</td><td>通常优先服务入口编排和工具调用语义</td><td>detached task、task id、状态机、callback、cancel、tail/artifact</td></tr><tr><td class="dim">执行期交互</td><td>更关注用户继续输入和入口侧编排</td><td>补充运行中模块通过结构化 stdio 主动请求 Agent 判断的协议</td></tr><tr><td class="dim">可观测性</td><td>chat transcript、UI 状态或框架内部日志</td><td><code>/v1/state</code>、<code>/v1/timeline</code>、<code>active_items</code>、TUI 和 curl 共享同一事实源</td></tr><tr><td class="dim">控制边界</td><td>泛工具调用抽象</td><td>LLM 做高层判断，controller/tool 承担确定执行，底层安全链路独立</td></tr></tbody></table></div>
+      </section>
+
+      <section class="section" id="access">
+        <div class="section-head"><div><div class="kicker">Access Model</div><h2>最低接入心智负担</h2></div><p>接入路径面向算法、应用和本体服务已有工作流设计，先托管、再交互、最后沉淀 skill。</p></div>
+        <div class="access-grid">
+          <div class="paper-card wide-card"><p>Botified 的最低接入成本不是“写插件/写技能”。非交互 CLI、脚本、本地命令可以保持现有 <code>argv</code>、<code>env</code>、<code>cwd</code>、<code>stdout</code>、<code>stderr</code>、exit code、shell pipeline 和 curl 调试方式，由 Botified 托管进程生命周期、tail、artifact、callback、cancel 和 timeline。只有当程序确实需要在执行期请求上层判断时，才选择性增加一个 stdout request envelope 和一个 stdin response envelope：打印 <code>&lt;botified&gt;{...}&lt;/botified&gt;</code>，读取 <code>&lt;botified_response&gt;{...}&lt;/botified_response&gt;</code>。不要求 SDK，不要求把算法模块改成 server，也不要求先迁移到复杂插件生态或配合写SKILL。</p></div>
+          <div class="paper-card wide-card"><h3>接入梯度</h3><div class="mini-list"><div><strong>0 改造：</strong>普通 CLI 先作为 task 被托管，获得 tail、artifact、exit code 和 timeline。</div><div><strong>低改造：</strong>detached task 获得 task id、cancel、callback 和状态观测。</div><div><strong>按需改造：</strong>interactive stdio 用 <code>&lt;botified&gt;</code> / <code>&lt;botified_response&gt;</code> 处理运行中反问。</div></div></div>
+        </div>
+      </section>
+
+      <section class="section" id="maturity">
+        <div class="section-head"><div><div class="kicker">Engineering Evidence</div><h2>成熟度工程证据</h2></div><p>工程证据原文完整保留，并用三张卡片分别呈现交付、自举和成本性能。</p></div>
+        <div class="maturity-grid"><div class="paper-card maturity-card"><h3>交付形态足够轻：single binary，复制即可运行</h3><p>Botified 服务端以单文件二进制交付，对使用者来说不需要 Python、Node、Rust toolchain、容器镜像或额外包管理流程；把二进制复制到目标机器即可执行。当前发布链路覆盖 Linux x86_64 和 Linux aarch64/ARM64，适配普通开发机、服务器和机器人侧 ARM 运行环境；macOS 版本正在补齐。发布仓库提供在线安装脚本，自动识别架构、下载对应二进制并校验 SHA256，开发和部署都可以用同一条路径。</p></div><div class="paper-card maturity-card"><h3>Botified 已经用自身能力完成过高复杂度自举开发</h3><p><code>botified-tui</code> 本身就是一次很好的技术证据：它不是一个简单 demo，而是包含 HTTP client、timeline follow、state bootstrap、task dock、输入模型、调试视图和大量测试的独立 TUI 客户端。内部开发中，<code>botified-tui</code> 基本由 Botified 配合 LLMUP + GPT-5.5 在约 72 小时内无人值守完成，说明 Botified 不只适合机器人，也具备通用智能体需要的长期任务推进、代码修改、测试反馈、错误恢复和工程闭环能力。</p></div><div class="paper-card maturity-card"><h3>性能与成本不是事后优化，而是 gate</h3><p>Botified 把 provider usage、cached input tokens、reasoning tokens、turn completed usage、context compaction 和 prompt 稳定性放进运行时和测试视图中，并把 KV cache hit rate 与 cost efficiency 纳入严格性能 gate。对机器人本体执行来说，这一点很关键：本体侧 Agent 需要长期在线，性能波动和 token 成本会直接影响响应速度、部署规模和实际可用性。</p></div></div>
+      </section>
+
+      <section class="claim-section" id="section-A">
+    <div class="claim-section-header steel">
+      <div class="section-mark">A</div>
+      <div>
+        <p class="eyebrow">Claims 1-8</p>
+        <h2>机器人侧 runtime 定位</h2>
+        <p>确立 Botified 的机器人本体侧 runtime 定位：多源事件、统一队列、职责分层和 controller 边界。</p>
+      </div>
+    </div>
+    <div class="claims-list"><details class="claim-card" id="claim-01">
+    <summary>
+      <span class="claim-num">01</span>
+      <span class="claim-title">Botified 的基本抽象是机器人侧常驻 runtime，而不是 chat-first 应用</span>
+      <span class="claim-tags"><span>detached task</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>技术重点不是“用户说一句，Agent 回一句”，而是服务长期运行后如何接收多源事件、排队、触发 Agent activation、托管后台任务、记录状态并把结果重新带回决策链路。机器人本体不会像网页请求一样一次性结束，动作执行、传感器准备、算法推理、控制切换和人工插话都可能跨越多个时间窗口。把 Botified 放在 robot-side runtime 位置，可以让这些时间窗口拥有统一的输入、任务和观测模型，而不是散落在每个 demo 脚本里。</p>
+      <div class="boundary"><span>Boundary</span>不是“用户说一句，Agent 回一句”，而是服务长期运行后如何接收多源事件、排队、触发 Agent activation、托管后台任务、记录状态并把结果重新带回决策链路。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-02">
+    <summary>
+      <span class="claim-num">02</span>
+      <span class="claim-title">Botified 采用 agent-centered activation，而不是 user-input centered interaction</span>
+      <span class="claim-tags"><span>queue</span><span>detached task</span><span>callback</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>用户消息只是 activation event 的一种，后台任务完成、任务失败、脚本运行中发出的 task request，也可以成为 Agent 被唤醒的原因。控制面或本体服务的事件需要先经 <code>/v1/messages</code>、task callback 或 task request 适配后进入统一队列，而不是直接绕过 runtime。这个方向对机器人尤其关键，因为现场关键事件经常不是由用户主动说出来的，而是由本体服务、算法模块或执行状态变化产生。</p>
+      <div class="boundary"><span>Boundary</span>不是直接绕过 runtime。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-03" open>
+    <summary>
+      <span class="claim-num">03</span>
+      <span class="claim-title">单 active agent loop 是机器人高层决策的收敛点</span>
+      <span class="claim-tags"><span>single active loop</span><span>queue</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人本体执行不适合多个高层 Agent 回合同时向 controller 发出互相冲突的意图。Botified 的服务端队列和单 active loop 使同一时刻只运行一个 Agent 回合，其他输入进入队列并在边界处被处理。这个设计不是为了降低并发能力，而是为了把机器人高层意图收敛到可推理、可排序、可中断的序列中，降低“两个脑子同时控制一个身体”的风险。</p>
+      <div class="boundary"><span>Boundary</span>不是为了降低并发能力，而是为了把机器人高层意图收敛到可推理、可排序、可中断的序列中，降低“两个脑子同时控制一个身体”的风险。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-04">
+    <summary>
+      <span class="claim-num">04</span>
+      <span class="claim-title">统一输入队列让用户插话、任务回调和模块请求共享调度语义</span>
+      <span class="claim-tags"><span>queue</span><span>detached task</span><span>callback</span><span>timeline</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>如果用户输入走聊天通道、后台任务走日志通道、算法模块走自定义回调通道，机器人现场行为会很难解释。Botified 的 queued message 带有 source、urgency、metadata 和 cursor，使不同来源的输入进入同一排队模型。这样应用同事和算法同事讨论问题时可以对齐在“哪个输入被 accepted、哪个输入在队列中、哪个输入被 drain、哪个输入触发了 Agent 回合”这些事实上，而不是各看各的日志。</p>
+      <div class="boundary"><span>Boundary</span>不是各看各的日志。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-05">
+    <summary>
+      <span class="claim-num">05</span>
+      <span class="claim-title">在工具和 controller 侧按职责拆分时，LLM 可以被限制在高层 reasoning 和规划层</span>
+      <span class="claim-tags"><span>controller</span><span>safety</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 本身提供 Agent runtime、tool 调用、任务托管和事件调度；底层运动参数是否暴露，取决于工具和 controller 如何设计。推荐架构是让 LLM 理解目标、选择策略、处理上下文、判断是否需要追问或降级，而把确定性命令、状态切换、任务取消和安全链路交给 controller/tool。这个分层能让算法、本体和控制同事接受 Agent 接入，因为它不要求他们把实时控制权交给模型。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-06">
+    <summary>
+      <span class="claim-num">06</span>
+      <span class="claim-title">决策和执行解耦后，Agent 不必为低频控制动作长时间阻塞</span>
+      <span class="claim-tags"><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>人型机器人动作、讲解、抓取准备、感知检查和状态切换往往是低频但耗时的执行过程。Botified 适合把这些过程 post 给 controller 或本体服务，让 controller 负责执行状态推进，Agent 只在需要判断、确认、切换或恢复时被唤醒。这样能够把“持续执行”从“持续占用 Agent main loop”中拆开，使 Botified 更快响应用户插话和后台事件。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-07">
+    <summary>
+      <span class="claim-num">07</span>
+      <span class="claim-title"><code>urgent</code>、<code>abort</code>、<code>task_cancel</code> 和硬件急停被明确区分</span>
+      <span class="claim-tags"><span>detached task</span><span>urgent</span><span>controller</span><span>safety</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人系统里“停一下”可能意味着停止当前 Agent 回合、取消一个后台任务、切换 controller 状态，或者触发硬件急停。Botified 把 urgent 定义为调度提示，把 abort 定义为 Agent 回合边界的中断，把 task cancel 定义为后台任务取消尝试，并明确不替代硬件急停。这个语义分层能避免把不同层级的 stop 语义混在同一事件上，让每一层都有自己的责任、失败模式和可观测结果。</p>
+      <div class="boundary"><span>Boundary</span>不替代硬件急停。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-08">
+    <summary>
+      <span class="claim-num">08</span>
+      <span class="claim-title">Botified 的 runtime 边界适合与 agentic-robot-controller 组合，而不是替代 controller</span>
+      <span class="claim-tags"><span>callback</span><span>controller</span><span>safety</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>controller 更适合处理低频控制、状态切换、动作状态保持和本体服务编排；Botified 更适合处理多源事件、用户语言、skill 规程、异步任务和高层决策。二者通过窄接口组合时，Botified 不需要进入实时控制环，controller 也不需要理解复杂对话上下文。更准确的分工是：controller 保持确定状态机和动作约束，Botified 补充语言、上下文、回调和 task request 触发的高层决策。</p>
+      
+    </div>
+  </details></div>
+  </section>
+<section class="claim-section" id="section-B">
+    <div class="claim-section-header olive">
+      <div class="section-mark">B</div>
+      <div>
+        <p class="eyebrow">Claims 9-18</p>
+        <h2>后台化长任务与异步事件回流</h2>
+        <p>把动作、视觉、音频、地图和脚本执行从同步 tool call 中拆出来，成为可观测、可取消、可回流的任务对象。</p>
+      </div>
+    </div>
+    <div class="claims-list"><details class="claim-card" id="claim-09" open>
+    <summary>
+      <span class="claim-num">09</span>
+      <span class="claim-title">detached background task 是一等运行时对象</span>
+      <span class="claim-tags"><span>detached task</span><span>callback</span><span>controller</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人动作、视觉处理、音频分析、地图更新和长时间脚本执行都不应被压缩成一次同步 tool call。Botified 允许工具调用在后台 detach，返回 task id，并在 task registry 中保留状态、输出、artifact 和取消令牌。这样长任务从“聊天记录中的一段输出”升级为可被观测、等待、取消和回调的 runtime 对象。</p>
+      <div class="boundary"><span>Boundary</span>不应被压缩成一次同步 tool call。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-10">
+    <summary>
+      <span class="claim-num">10</span>
+      <span class="claim-title">detach ack 明确表示“已托管运行”，不伪装成任务完成</span>
+      <span class="claim-tags"><span>detached task</span><span>callback</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 的 detached ack 会说明 background task detached、status running、task id、timeout 和后续 callback，而不是把异步启动包装成最终成功。机器人场景中这个边界很重要：动作开始执行不等于动作完成，导航开始不等于到达，感知任务启动不等于识别结果可信。把 ack 和 final result 分离，可以减少 Agent、UI 和现场人员对执行进度的误判。</p>
+      <div class="boundary"><span>Boundary</span>不是把异步启动包装成最终成功。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-11">
+    <summary>
+      <span class="claim-num">11</span>
+      <span class="claim-title">后台任务终态通过 callback 尝试回到 Agent，形成闭环决策</span>
+      <span class="claim-tags"><span>queue</span><span>detached task</span><span>callback</span><span>durable</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>detached task 完成、失败、超时或取消后，会生成 task callback，并在条件允许时重新进入服务队列触发后续 Agent 处理；该路径仍受 queue full、shutdown、持久化失败和进程退出等边界影响。对机器人来说，这意味着“执行结果”可以回到高层 reasoning 链路，比如动作失败后切换策略、识别失败后请求用户补充、控制命令超时后进入降级路径。它不是必达消息系统，但已经比单纯写日志更适合机器人长任务。</p>
+      <div class="boundary"><span>Boundary</span>不是必达消息系统，但已经比单纯写日志更适合机器人长任务。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-12">
+    <summary>
+      <span class="claim-num">12</span>
+      <span class="claim-title">callback delivery 具备 Pending、Enqueued、Delivered、Failed 等状态，而不是一次性丢给队列</span>
+      <span class="claim-tags"><span>queue</span><span>detached task</span><span>callback</span><span>urgent</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人现场队列可能满、Agent 可能正在处理 urgent 输入、服务可能处在 shutdown 边界。Botified 将 callback delivery 建模为状态机，并在队列压力下保留 pending 状态，待条件允许再重试入队。这个机制让后台任务结果不至于因为一时队列不可用就消失，也让调试工具可以看见结果为什么还没有被 Agent 消费。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-13">
+    <summary>
+      <span class="claim-num">13</span>
+      <span class="claim-title">任务生命周期覆盖主要终态，并为异常状态预留表达空间</span>
+      <span class="claim-tags"><span>controller</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人任务的失败模式多，不应只用“成功/失败”二值表示。Botified 的强证据覆盖 running、completed、failed、timed_out、cancelling、cancelled 等状态，状态模型中也预留了 lost 这类异常表达。这个细粒度状态对控制台、HMI 和远程支持有实际意义，因为不同状态对应不同处理方式：等待、重试、查看 artifact、取消、重新发起或要求人工介入。</p>
+      <div class="boundary"><span>Boundary</span>不应只用“成功/失败”二值表示。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-14">
+    <summary>
+      <span class="claim-num">14</span>
+      <span class="claim-title">大输出通过 tail 和 artifact 管理，避免污染模型上下文</span>
+      <span class="claim-tags"><span>cost</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>算法模块和本体脚本会打印大量日志、诊断信息、图片路径或中间结果。如果这些输出全部进入 LLM 上下文，会增加成本、降低可靠性，还可能让模型被无关日志误导。Botified 使用 bounded tail 和 capped artifact 处理任务输出，给 Agent 和人类足够的摘要，同时把完整输出保留在受控大小范围内用于调试。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-15">
+    <summary>
+      <span class="claim-num">15</span>
+      <span class="claim-title">超时和取消是后台执行的工程护栏</span>
+      <span class="claim-tags"><span>detached task</span><span>cost</span><span>controller</span><span>safety</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 的工具执行有默认 timeout、可配置 timeout、detached task 终止时间和 cancellation token。取消在进程层面仍是 best effort，不应包装成功能安全保证，但它已经把“长任务永远挂住 Agent 或资源”的风险收敛到了 runtime 控制范围内。机器人侧任务天然可能遇到设备未准备、驱动阻塞、网络等待，超时和取消边界是从 demo 走向长期运行的基础。</p>
+      <div class="boundary"><span>Boundary</span>不应包装成功能安全保证，但它已经把“长任务永远挂住 Agent 或资源”的风险收敛到了 runtime 控制范围内。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-16">
+    <summary>
+      <span class="claim-num">16</span>
+      <span class="claim-title">并发上限和队列压力被显式建模</span>
+      <span class="claim-tags"><span>queue</span><span>detached task</span><span>controller</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 对队列长度、队列字节、后台任务并发、pending task request 数量都有上限或配置边界。机器人系统中，资源比云端服务更紧张，CPU、内存、传感器、设备句柄和控制通道都可能成为瓶颈。把这些压力点放进 runtime，而不是让每个脚本各自处理，可以降低 runaway 任务拖垮整机交互的概率。</p>
+      <div class="boundary"><span>Boundary</span>不是让每个脚本各自处理，可以降低 runaway 任务拖垮整机交互的概率。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-17">
+    <summary>
+      <span class="claim-num">17</span>
+      <span class="claim-title">shutdown 有有限 quiescence 边界，避免半提交被默默忽略</span>
+      <span class="claim-tags"><span>detached task</span><span>controller</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人本体服务经常会被 systemd、调试脚本或控制面重启。Botified 在 shutdown 时会尝试取消后台任务、等待关键路径收敛，并保留已 accepted 的输入语义。这里不能夸大成“恢复所有物理任务”或“进程死亡后恢复后台任务”，但它至少把服务重启时常见的输入半提交、任务取消和状态不可见问题纳入了运行时设计。</p>
+      <div class="boundary"><span>Boundary</span>不能夸大成“恢复所有物理任务”或“进程死亡后恢复后台任务”，但它至少把服务重启时常见的输入半提交、任务取消和状态不可见问题纳入了运行时设计。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-18">
+    <summary>
+      <span class="claim-num">18</span>
+      <span class="claim-title">后台化长任务和异步事件回流让 Agent main loop 少被执行等待占用</span>
+      <span class="claim-tags"><span>queue</span><span>detached task</span><span>callback</span><span>urgent</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 不是硬实时异步调度框架，provider 调用、inline tool 和持久化路径仍可能占用当前回合。它的关键价值是通过 detached task、callback、task request 和队列，把可后台化的执行等待转移给 runtime 和 controller，把 Agent 留给新的用户输入、urgent 调度、策略判断和任务结果处理。用户不会总是等机器人完整执行完一个动作才说下一句话，因此这个服务模型更贴近机器人现场交互。</p>
+      <div class="boundary"><span>Boundary</span>不是硬实时异步调度框架，provider 调用、inline tool 和持久化路径仍可能占用当前回合。</div>
+    </div>
+  </details></div>
+  </section>
+<section class="claim-section" id="section-C">
+    <div class="claim-section-header brass">
+      <div class="section-mark">C</div>
+      <div>
+        <p class="eyebrow">Claims 19-29</p>
+        <h2>交互式 stdio 与低心智接入</h2>
+        <p>让算法模块继续按 CLI/stdio 工作，只在需要高层判断时显式请求 Agent，降低接入和调试成本。</p>
+      </div>
+    </div>
+    <div class="claims-list"><details class="claim-card" id="claim-19">
+    <summary>
+      <span class="claim-num">19</span>
+      <span class="claim-title">Botified 让 Agent 适配现有 CLI/脚本开发方式，而不是要求算法模块适配 Agent 框架</span>
+      <span class="claim-tags"><span>callback</span><span>cost</span><span>single binary</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>算法同事通常已经有 Python、C++、shell、ROS bridge 或本地二进制，可以在终端独立运行和调试。非交互脚本可以保留 <code>argv</code>、<code>env</code>、<code>cwd</code>、<code>stdout</code>、<code>stderr</code>、exit code 和现有 shell pipeline；Botified 只是在外层托管进程生命周期、tail、artifact、callback 和 cancel。这个接入路径降低了算法模块适配成本，因为它不要求一开始就改造成复杂插件、HTTP 服务或 SDK。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-20">
+    <summary>
+      <span class="claim-num">20</span>
+      <span class="claim-title"><code>interactive_stdio</code> 是显式 opt-in，降低旧脚本误接入风险</span>
+      <span class="claim-tags"><span>detached task</span><span>stdio</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>目前 interactive stdio 只对 bash tool 生效，并且面向 detached background task；开启后任务会进入后台托管路径，避免脚本等待 stdin 时占住 Agent 回合。普通任务的 stdout/stderr 仍按输出处理，只有显式开启后 Botified 才解析 <code>&lt;botified&gt;...&lt;/botified&gt;</code> frame。这种 opt-in 设计适合机器人内部渐进接入：已有脚本可以先作为普通命令运行，只有需要运行中请求 Agent 判断的模块才开启交互协议。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-21" open>
+    <summary>
+      <span class="claim-num">21</span>
+      <span class="claim-title"><code>&lt;botified&gt;</code> frame 把“脚本运行中反问 Agent”做成小而硬的协议</span>
+      <span class="claim-tags"><span>stdio</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>一个算法模块遇到不确定情况时，可以向 stdout 写出形如 <code>&lt;botified&gt;{&quot;id&quot;:&quot;q1&quot;,&quot;request&quot;:&quot;...&quot;,&quot;expect&quot;:&quot;yes/no&quot;,&quot;urgency&quot;:&quot;normal&quot;}&lt;/botified&gt;</code> 的结构化请求，再从 stdin 读取 <code>&lt;botified_response&gt;{...}&lt;/botified_response&gt;</code>。协议字段保持有限：id、request、expect、timeout_secs、urgency，未知字段拒绝。不交互的脚本完全不需要增加这两行；需要交互的脚本也不必改造成完整 Agent client。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-22">
+    <summary>
+      <span class="claim-num">22</span>
+      <span class="claim-title">普通 stdout/stderr 不会变成伪指令</span>
+      <span class="claim-tags"><span>queue</span><span>stdio</span><span>urgent</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人算法日志里可能有大量“error”“warning”“retry”“stop”等词，如果这些文本默认进入 LLM 队列，会产生误触发和提示注入风险。Botified 明确规定 plain stdout/stderr 只是 task output，不会在任务运行中唤醒 Agent；只有显式 <code>&lt;botified&gt;</code> frame 才是 task request。这个边界让算法同事保留原有日志习惯，同时把 Agent 交互入口收窄到可审查协议。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-23">
+    <summary>
+      <span class="claim-num">23</span>
+      <span class="claim-title"><code>task_reply</code> 由 Agent 写回 child stdin，算法脚本读取结构化响应帧即可继续</span>
+      <span class="claim-tags"><span>stdio</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>task request 进入 Agent 后，Agent 可以结合用户目标、skill、当前上下文和系统状态做判断，再通过内置 <code>task_reply</code> tool 写回 <code>&lt;botified_response&gt;...&lt;/botified_response&gt;</code>。脚本侧只需要从 stdin 读取响应或异常 envelope。人工 manual reply 适合 debug 和 break-glass，不应成为正常路径；正常链路应保持由 Agent 通过 <code>task_reply</code> 响应。</p>
+      <div class="boundary"><span>Boundary</span>不应成为正常路径；</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-24">
+    <summary>
+      <span class="claim-num">24</span>
+      <span class="claim-title">admission 失败请求不会进入 LLM transcript，并尽量返回结构化 exception</span>
+      <span class="claim-tags"><span>queue</span><span>cost</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 对 frame JSON、字段白名单、request 大小、id token、expect 大小、timeout 合法性都有校验。无效、超限、未知字段等 admission 失败请求不会进入 LLM 队列；如果能识别 request id 且 stdin 可写，则向子进程返回 bounded exception frame。已 accepted 但过期或终止的 pending request 会被清理并记录，late reply 不应再写回子进程。</p>
+      <div class="boundary"><span>Boundary</span>不应再写回子进程。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-25">
+    <summary>
+      <span class="claim-num">25</span>
+      <span class="claim-title">task request 具备 deadline、urgency 和 pending limit，不是无界聊天通道</span>
+      <span class="claim-tags"><span>safety</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>运行中的脚本可以请求 Agent 判断，但不能无限堆积问题。Botified 对单 task pending request、全局 pending request、默认 pending timeout、请求文本大小和回复大小设边界。机器人现场必须这样设计，因为一个异常脚本不应把 Agent main loop 拖进无界问答，也不应通过大量请求挤占用户插话和安全相关输入的处理空间。</p>
+      <div class="boundary"><span>Boundary</span>不能无限堆积问题。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-26">
+    <summary>
+      <span class="claim-num">26</span>
+      <span class="claim-title"><code>expect</code> 是语义提示，不是强 schema，降低算法模块协议负担</span>
+      <span class="claim-tags"><span>cost</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>很多机器人判断无法提前做成完整 JSON schema，例如“是否继续等待 lidar”“是否让用户再说一遍”“是否重试动作生成”。Botified 的 <code>expect</code> 只是给 Agent 的语义提示，例如 yes/no 或 fail-reason，而不是要求算法同事设计复杂 schema。这样既保留结构化边界，又降低早期接入和实验阶段的协议成本。</p>
+      <div class="boundary"><span>Boundary</span>不是要求算法同事设计复杂 schema。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-27">
+    <summary>
+      <span class="claim-num">27</span>
+      <span class="claim-title">算法程序可以脱离 Agent 独立调试，接入后再获得 Agent 协调</span>
+      <span class="claim-tags"><span>stdio</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>一个 CLI 程序可以先在终端中用人工 stdin/stdout 模拟交互，确认算法逻辑正确后，再由 Botified 托管为 interactive stdio 任务。需要复现交互路径时，开发者可以直接运行脚本，手工输入一行 response envelope；不需要先启动完整 Agent 栈。这个路径对机器人研发很现实，因为算法模块常需要单独跑数据、接传感器、复现日志、验证边界条件。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-28">
+    <summary>
+      <span class="claim-num">28</span>
+      <span class="claim-title">manual reply 适合 debug 和 break-glass，不应成为正常链路</span>
+      <span class="claim-tags"><span>stdio</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 保留手动回复 task request 的能力，方便开发、现场排障和紧急验证。但正常路径应由 Agent 通过 <code>task_reply</code> 响应，保持 task request、Agent 判断、skill 约束和上下文一致。这个边界能让应用同事放心：调试工具存在，但运行时主链路不会变成绕过 Agent 的隐式人工通道。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-29">
+    <summary>
+      <span class="claim-num">29</span>
+      <span class="claim-title">标准 HTTP 和 curl 让应用侧自动化不必绑定专用 UI</span>
+      <span class="claim-tags"><span>timeline</span><span>state</span><span>urgent</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p><code>/healthz</code>、<code>/v1/state</code>、<code>/v1/messages</code>、<code>/v1/timeline</code>、<code>/v1/abort</code> 等接口可以直接用 curl、HMI、测试脚本或控制台调用。TUI 是服务附着式客户端，不是第二套控制面。对应用团队来说，这意味着他们可以用熟悉的脚本自动化方式接入 Botified，不需要等专用前端或私有调试工具才能开始集成。</p>
+      <div class="boundary"><span>Boundary</span>不是第二套控制面。</div>
+    </div>
+  </details></div>
+  </section>
+<section class="claim-section" id="section-D">
+    <div class="claim-section-header clay">
+      <div class="section-mark">D</div>
+      <div>
+        <p class="eyebrow">Claims 30-38</p>
+        <h2>高可靠调度与恢复边界</h2>
+        <p>把输入 accepted、队列 drain、commit/rollback、urgent 和 stale request 都纳入可靠调度边界。</p>
+      </div>
+    </div>
+    <div class="claims-list"><details class="claim-card" id="claim-30">
+    <summary>
+      <span class="claim-num">30</span>
+      <span class="claim-title">外部输入先 durable accept，再入队、触发 urgent 抢断或启动新的 Agent turn</span>
+      <span class="claim-tags"><span>queue</span><span>timeline</span><span>urgent</span><span>durable</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 在输入进入实际队列或触发抢断前，先记录 accepted input。这个顺序对机器人控制台和 HMI 很重要：外围系统得到 accepted/queued/duplicate 等响应时，可以基于 message id 和 timeline cursor 推断请求状态。它不是分布式 exactly-once 语义，也不覆盖外部物理动作副作用，但已经把“请求到底有没有被 runtime 接住”从日志猜测推进到了明确协议。</p>
+      <div class="boundary"><span>Boundary</span>不是分布式 exactly-once 语义，也不覆盖外部物理动作副作用，但已经把“请求到底有没有被 runtime 接住”从日志猜测推进到了明确协议。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-31">
+    <summary>
+      <span class="claim-num">31</span>
+      <span class="claim-title">client message id 提供 replay/retention 范围内的幂等重试基础</span>
+      <span class="claim-tags"><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人现场网络、控制台和调试脚本都有可能重试消息。Botified 通过 client message id 区分 duplicate、conflict 和新输入，降低重复入队和重复执行高层意图的风险。这里不能承诺物理动作 exactly-once，但对 HTTP 调用、HMI 重试和服务重启边界已经提供了比普通 chat endpoint 更强的工程语义。</p>
+      <div class="boundary"><span>Boundary</span>不能承诺物理动作 exactly-once，但对 HTTP 调用、HMI 重试和服务重启边界已经提供了比普通 chat endpoint 更强的工程语义。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-32" open>
+    <summary>
+      <span class="claim-num">32</span>
+      <span class="claim-title">队列处理有 drain、commit、rollback 的事务边界</span>
+      <span class="claim-tags"><span>queue</span><span>callback</span><span>durable</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Agent 回合从队列 drain 输入时，Botified 会形成 pending batch，并在 provider/context 持久化成功后再 commit；失败时可以 rollback，让队列消息不因中间错误被静默移除。机器人场景中，用户插话和任务回调丢失会直接影响现场行为。这个队列边界比简单 FIFO pop 更可靠，因为它把“拿出来处理”和“确认处理成功”拆成了两个阶段。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-33">
+    <summary>
+      <span class="claim-num">33</span>
+      <span class="claim-title">urgent-first drain 在有限队列内支持优先处理急迫输入，同时保留 rollback 语义</span>
+      <span class="claim-tags"><span>queue</span><span>urgent</span><span>durable</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 会在 drain 时优先选择 urgent 输入，再处理 normal 输入；但 urgent 仍受队列上限、pending limit、provider/tool cancellation 和 timeout 约束。这个设计适合机器人，因为用户插话或高优先级 task request 需要尽快进入高层决策，同时又不能绕开 runtime 的所有工程护栏。</p>
+      <div class="boundary"><span>Boundary</span>不能绕开 runtime 的所有工程护栏。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-34">
+    <summary>
+      <span class="claim-num">34</span>
+      <span class="claim-title">持久化失败时不触发抢断，避免系统进入“未记录但已改变”的状态</span>
+      <span class="claim-tags"><span>urgent</span><span>durable</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>对 urgent 输入而言，最危险的情况是还没有可靠记录，就已经打断当前 Agent 回合。Botified 的顺序是 accepted input 持久化成功后才进入后续入队和抢断逻辑；若持久化失败，则返回 rejection 而不是改变运行状态。这个边界体现的是工程可靠性：宁可明确拒绝，也不制造无法复盘的隐式状态变化。</p>
+      <div class="boundary"><span>Boundary</span>不是改变运行状态。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-35">
+    <summary>
+      <span class="claim-num">35</span>
+      <span class="claim-title">stale task request 会在进入 provider 前被清理，避免过期问题继续影响 reasoning</span>
+      <span class="claim-tags"><span>state</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>脚本运行中发出的 task request 有 deadline。过期请求不应在很久以后又进入 LLM，让 Agent 回答一个已经没有意义的问题。Botified 在 provider drain 前处理 stale request，并用 task request state、exception 或事件把结果反映出来。机器人现场经常有“几秒后就无效”的判断，例如等待传感器、确认用户是否还在、动作是否需要继续；deadline 是必要边界。</p>
+      <div class="boundary"><span>Boundary</span>不应在很久以后又进入 LLM，让 Agent 回答一个已经没有意义的问题。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-36">
+    <summary>
+      <span class="claim-num">36</span>
+      <span class="claim-title">provider_stop 和 commit failure 采用 fail-closed 思路，普通 provider 错误按队列状态推进</span>
+      <span class="claim-tags"><span>queue</span><span>urgent</span><span>durable</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>当停止请求或 context 持久化出现异常时，Botified 倾向于保留队列和上下文一致性，而不是假装当前回合成功完成。普通 provider transport error 则需要结合队列中是否还有后续输入决定是否启动新的 Agent loop。对机器人来说，高层 Agent 回合失败并不可怕，可怕的是状态被部分提交、后续输入丢失、现场人员看不出发生了什么。</p>
+      <div class="boundary"><span>Boundary</span>不是假装当前回合成功完成。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-37">
+    <summary>
+      <span class="claim-num">37</span>
+      <span class="claim-title">队列长度、队列字节和输入大小限制把压力前置暴露</span>
+      <span class="claim-tags"><span>queue</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 在 HTTP body、queue length、queue bytes、provider response、event payload、task output 等层面设有限制。机器人本体设备资源有限，不能依赖“无限队列”和“无限上下文”处理现场噪声。明确返回 queue full 或 payload too large，虽然看起来不如“什么都收”友好，但更适合工程系统长期运行。</p>
+      <div class="boundary"><span>Boundary</span>不能依赖“无限队列”和“无限上下文”处理现场噪声。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-38">
+    <summary>
+      <span class="claim-num">38</span>
+      <span class="claim-title">重启后可处理已 accepted 但未 drained 的 pending input，但不夸大为物理动作恢复</span>
+      <span class="claim-tags"><span>durable</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 的 session 和 durable input 机制能让部分已 accepted、尚未被 Agent 消费的输入在重启边界后重新进入处理链路。这个能力对控制台重启、服务升级和现场调试很有用。但宣传时需要准确：它恢复的是 Agent 输入和上下文处理边界，不是已经在 controller 或硬件层执行中的物理动作。</p>
+      <div class="boundary"><span>Boundary</span>不是已经在 controller 或硬件层执行中的物理动作。</div>
+    </div>
+  </details></div>
+  </section>
+<section class="claim-section" id="section-E">
+    <div class="claim-section-header steel">
+      <div class="section-mark">E</div>
+      <div>
+        <p class="eyebrow">Claims 39-44</p>
+        <h2>可观测性与调试闭环</h2>
+        <p>用 state、timeline、active_items 和 TUI/curl 共享同一事实源，形成现场调试闭环。</p>
+      </div>
+    </div>
+    <div class="claims-list"><details class="claim-card" id="claim-39" open>
+    <summary>
+      <span class="claim-num">39</span>
+      <span class="claim-title">timeline 是统一事件投影，而不是散落日志</span>
+      <span class="claim-tags"><span>queue</span><span>callback</span><span>timeline</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 将 service status、queue pressure、input accepted/queued/rejected/drained、cycle event、provider request、assistant message、command execution、background task lifecycle、callback delivery 和 error 投影到统一 timeline。对机器人现场支持来说，大家看同一条事件流，比各自翻 Agent 日志、算法日志和控制台输出更容易定位问题。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-40">
+    <summary>
+      <span class="claim-num">40</span>
+      <span class="claim-title"><code>/v1/state</code> 提供中途接入现场所需的 bootstrap</span>
+      <span class="claim-tags"><span>queue</span><span>timeline</span><span>state</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>调试人员、HMI 或远程支持工具不一定从任务开始时就在场。Botified 的 state snapshot 能提供 service state、queue length、timeline cursor、provider summary、task summary、active background task、pending task request 等信息。这个设计让新客户端接入时能快速知道“当前机器人侧 Agent runtime 正在处理什么”，而不是只能从空白聊天窗口开始猜。</p>
+      <div class="boundary"><span>Boundary</span>不是只能从空白聊天窗口开始猜。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-41">
+    <summary>
+      <span class="claim-num">41</span>
+      <span class="claim-title"><code>active_items</code> 把当前正在发生的事显式化</span>
+      <span class="claim-tags"><span>queue</span><span>state</span><span>cost</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>active_items 可以包含 service status、queue state、active cycle、provider、command、background task 和 task request。机器人现场常见的问题是“它现在到底卡在哪里”。把 active items 做成统一状态，而不是让 UI 从历史日志中推断，可以减少应用同事和现场同事的排障成本。</p>
+      <div class="boundary"><span>Boundary</span>不是让 UI 从历史日志中推断，可以减少应用同事和现场同事的排障成本。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-42">
+    <summary>
+      <span class="claim-num">42</span>
+      <span class="claim-title">TUI、HMI、自动化脚本共享同一 HTTP/timeline 事实源</span>
+      <span class="claim-tags"><span>timeline</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>botified-tui 是连接服务的客户端，不是另一个 runtime。HMI 和测试脚本也可以通过同样的 HTTP 和 timeline 接口接入。这个技术选择能避免“开发调试看 TUI，线上系统走另一路接口，两个状态不一致”的问题，也方便算法同事用最简单的 curl 复现应用侧看到的状态。更重要的是，botified-tui 自身已经作为复杂客户端被 Botified 长时间自举开发过，说明这套 runtime 不只是机器人特化能力，也覆盖了通用智能体应有的工程任务推进、调试和迭代闭环。</p>
+      <div class="boundary"><span>Boundary</span>不是另一个 runtime。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-43">
+    <summary>
+      <span class="claim-num">43</span>
+      <span class="claim-title">timeline cursor 和 NDJSON follow 适合机器人现场 tail</span>
+      <span class="claim-tags"><span>timeline</span><span>state</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>timeline 支持 snapshot、cursor、follow 和 stale cursor recovery 语义，适合控制台、远程支持工具和自动化测试持续跟踪机器人侧事件。相比一次性读取日志文件，cursor 化事件流更适合长时间运行服务，因为客户端可以在同一进程且 cursor 未过期、未被裁剪时续读；cursor 过旧或服务重启后，应通过 <code>/v1/state</code> 重新建立视图。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-44">
+    <summary>
+      <span class="claim-num">44</span>
+      <span class="claim-title">输出和事件 payload 有界，避免调试通道反过来拖垮系统</span>
+      <span class="claim-tags"><span>callback</span><span>timeline</span><span>limits</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>可观测性本身也可能成为负担。Botified 对 event string、array/object entries、timeline retention、callback output tail、artifact size 都设上限，并对敏感环境变量做 best-effort 过滤。它不应被宣传成 DLP 或合规审计，但作为机器人现场调试通道，这些边界能降低大日志、大输出、异常 payload 对服务稳定性的影响。</p>
+      <div class="boundary"><span>Boundary</span>不应被宣传成 DLP 或合规审计，但作为机器人现场调试通道，这些边界能降低大日志、大输出、异常 payload 对服务稳定性的影响。</div>
+    </div>
+  </details></div>
+  </section>
+<section class="claim-section" id="section-F">
+    <div class="claim-section-header charcoal">
+      <div class="section-mark">F</div>
+      <div>
+        <p class="eyebrow">Claims 45-50</p>
+        <h2>模型、工具和部署工程</h2>
+        <p>把模型路由、usage、工具暴露面、single binary 和 skill 经验沉淀放到工程化交付视角中。</p>
+      </div>
+    </div>
+    <div class="claims-list"><details class="claim-card" id="claim-45">
+    <summary>
+      <span class="claim-num">45</span>
+      <span class="claim-title">provider capability routing 和 usage 统计把模型差异、性能和成本收敛在 runtime 层</span>
+      <span class="claim-tags"><span>cost</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人应用不应让每个 skill、脚本或本体服务都单独适配不同 OpenAI-compatible provider、自建 endpoint 或多能力模型差异。Botified 在 provider 和 capability 层处理文本、视觉、tool calls、usage、cached token、reasoning token 和 endpoint 差异，使业务模块面向更稳定的 Agent runtime 接口。更关键的是，Botified 把 KV cache 友好、cached input token 观测、context compaction 和 cost efficiency 作为性能 gate 的一部分，而不是让每个业务模块各自猜测模型成本和缓存命中情况。</p>
+      <div class="boundary"><span>Boundary</span>不是让每个业务模块各自猜测模型成本和缓存命中情况。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-46">
+    <summary>
+      <span class="claim-num">46</span>
+      <span class="claim-title">视觉能力通过 <code>view_image</code> 等工具和 provider capability 边界进入 Agent</span>
+      <span class="claim-tags"></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人需要处理本地图片和视觉上下文，但这不等于把原始传感器流直接塞进 LLM。Botified 的图像查看工具解析本地图片、编码并路由到具备 text/image capability 的 endpoint，返回文本和元数据。这个边界适合机器人：传感器和视觉算法仍由本体模块处理，Agent 只在需要语义判断时消费经过选择和编码的视觉输入。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-47">
+    <summary>
+      <span class="claim-num">47</span>
+      <span class="claim-title">工具启用、service key、环境变量 secret 和非 loopback 部署有明确暴露面边界</span>
+      <span class="claim-tags"><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 是 headless HTTP service，但不默认把所有工具暴露给任意网络。配置可以控制 enabled tools，secret 从环境变量读取，非 loopback bind 且启用工具时需要 service key。service key 不是 RBAC，也不是完整 authz 模型；它的价值是收敛机器人内部部署的服务暴露面，避免把 Botified 理解成一个无边界的命令执行服务。</p>
+      <div class="boundary"><span>Boundary</span>不是 RBAC，也不是完整 authz 模型；</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-48" open>
+    <summary>
+      <span class="claim-num">48</span>
+      <span class="claim-title">single binary 交付贴近机器人侧部署现实</span>
+      <span class="claim-tags"><span>single binary</span><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>Botified 服务端以 plain Linux binary 交付，当前覆盖 x86_64 和 aarch64/ARM64，配置以 YAML 和环境变量为主，并有release-smoke、GLIBC/架构检查等工程路径。对使用者而言，不需要安装 Python、Node、Rust toolchain、SDK 或容器运行时；复制二进制即可启动服务。发布仓库提供一键在线安装脚本，自动选择 x86_64 或 aarch64 资产并校验 SHA256；macOS 版本进入发布补齐路径后，开发机体验也会进一步降低门槛。</p>
+      
+    </div>
+  </details>
+<details class="claim-card" id="claim-49">
+    <summary>
+      <span class="claim-num">49</span>
+      <span class="claim-title">skill 是技术经验外化机制，但不扩大执行权限</span>
+      <span class="claim-tags"><span>controller</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>机器人作业规程、动作策略、交互约束、故障处理经验和场景流程可以沉淀为 skill 文件，便于纳入版本管理、review 和迭代流程。skill 提供提示词、流程和上下文资产，不替代 runtime config，不扩大工具权限，也不改变 bash、HTTP、TUI 和 controller 的执行边界。对算法和应用团队来说，它是持续沉淀机器人经验的接口，而不是新的功能逻辑系统。</p>
+      <div class="boundary"><span>Boundary</span>不替代 runtime config，不扩大工具权限，也不改变 bash、HTTP、TUI 和 controller 的执行边界。</div>
+    </div>
+  </details>
+<details class="claim-card" id="claim-50">
+    <summary>
+      <span class="claim-num">50</span>
+      <span class="claim-title">标准化 runtime 契约把跨团队集成收敛到少数接口上</span>
+      <span class="claim-tags"><span>callback</span><span>stdio</span><span>timeline</span><span>state</span></span>
+    </summary>
+    <div class="claim-body">
+      <p>对算法同事，主要接口是 CLI/stdio、task request 和 task reply；对应用同事，主要接口是 HTTP、curl、TUI、state 和 timeline；对控制同事，主要边界是 tool/controller 接口和状态事件。这个契约化设计的技术差异不是“更会聊天”，而是把机器人本体执行中的异步、回调、插话、状态、调试、性能成本和交付问题集中到同一个 “Agent为中心调度 runtime” 语义里处理。</p>
+      <div class="boundary"><span>Boundary</span>不是“更会聊天”，而是把机器人本体执行中的异步、回调、插话、状态、调试、性能成本和交付问题集中到同一个 “Agent为中心调度 runtime” 语义里处理。</div>
+    </div>
+  </details></div>
+  </section>
+
+      <section class="section" id="thesis">
+        <div class="section-head"><div><div class="kicker">Closing Thesis</div><h2>可以用于汇报开场的技术主张</h2></div><p>这部分保留原文可用于开场或收束的技术主张。</p></div>
+        <div class="paper-card thesis-card"><p>Botified 的原创性不在某一个单点 API，而在一组面向机器人本体执行的组合设计：单 active agent loop、统一多源输入队列、后台化长任务、异步事件回流、task request/task reply 交互式 stdio、bounded output、durable accept、commit/rollback、timeline/state/active_items、provider capability routing、KV cache/cost gate、single-binary release，以及 LLM/controller/tool 的职责分层。  </p>
+<p>这组设计把机器人 Agent 从“会调用工具的聊天程序”推进到“可以托管长任务、接收运行中反问、响应插话、保留调试事实、优化长期运行成本、并与 controller 解耦协作的本体侧运行时”。对公司内部同事的关键价值不是要求他们迁移开发范式，而是在现有 CLI、脚本、本体服务和控制面之上增加统一的 Agent 协调协议。</p></div>
+      </section>
+
+      <section class="section" id="evidence">
+        <div class="section-head"><div><div class="kicker">Evidence Index</div><h2>证据索引</h2></div><p>公开页面保留内部源码路径文本；README.md 和 install.sh 为公开 release 仓库链接。</p></div>
+        <div class="evidence-grid"><div class="evidence-card"><div class="evidence-index">01</div><p>交互式 stdio 协议、frame 规则、urgency 边界和 limits：<code>内部源码路径: botified/docs/ops-manual.md</code></p></div><div class="evidence-card"><div class="evidence-index">02</div><p>用户输入、urgency、队列、abort 和 timeline 用法：<code>内部源码路径: botified/docs/user-manual.md</code></p></div><div class="evidence-card"><div class="evidence-index">03</div><p>task state、callback delivery、frame parser、request limits、bounded output：<code>内部源码路径: botified/src/tasks.rs</code></p></div><div class="evidence-card"><div class="evidence-index">04</div><p>service queue、durable accept、commit/rollback、state bootstrap、callback retry：<code>内部源码路径: botified/src/service.rs</code></p></div><div class="evidence-card"><div class="evidence-index">05</div><p>detached task ack、background task execution、timeout/cancel policy：<code>内部源码路径: botified/src/agent_loop.rs</code></p></div><div class="evidence-card"><div class="evidence-index">06</div><p>bash tool schema、<code>interactive_stdio</code> opt-in 语义：<code>内部源码路径: botified/src/tools/bash.rs</code></p></div><div class="evidence-card"><div class="evidence-index">07</div><p>provider capability routing 和多模型适配测试：<code>内部源码路径: botified/tests/provider_router.rs</code></p></div><div class="evidence-card"><div class="evidence-index">08</div><p>provider usage、cached token 和 reasoning token 统计：<code>内部源码路径: botified/src/provider/openai_chat.rs</code>、<code>内部源码路径: botified/tests/agent_loop.rs</code></p></div><div class="evidence-card"><div class="evidence-index">09</div><p>release smoke 和机器人侧架构目标：<code>内部源码路径: botified/tests/release_smoke.rs</code>、<code>内部源码路径: botified/Makefile</code></p></div><div class="evidence-card"><div class="evidence-index">10</div><p>public release 和一键安装脚本：<a href="README.md"><code>README.md</code></a>、<a href="install.sh"><code>install.sh</code></a></p></div><div class="evidence-card"><div class="evidence-index">11</div><p>关键测试覆盖：<code>内部源码路径: botified/tests/service_queue.rs</code>、<code>内部源码路径: botified/tests/background_execution.rs</code>、<code>内部源码路径: botified/tests/task_tools.rs</code>、<code>内部源码路径: botified/tests/http_service.rs</code></p></div></div>
+      </section>
+      <footer>Generated from botified-robot-runtime-50-technical-claims.md · Botified robot-side runtime technical brief</footer>
+    </main>
+  </div>
+  <div class="actions"><button id="expandAll">Expand all</button><button id="collapseAll">Collapse all</button><button id="topBtn">Top</button></div>
+  <script>
+    const links = [...document.querySelectorAll('.side-nav a')];
+    const sections = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+    const fill = document.getElementById('progressFill');
+    function updateProgress() {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      fill.style.width = max > 0 ? ((scrollY / max) * 100).toFixed(2) + '%' : '0%';
+      let active = sections[0]?.id;
+      for (const section of sections) {
+        if (section.getBoundingClientRect().top < innerHeight * 0.35) active = section.id;
+      }
+      links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + active));
+    }
+    addEventListener('scroll', updateProgress, { passive: true });
+    addEventListener('resize', updateProgress);
+    updateProgress();
+    document.getElementById('expandAll').addEventListener('click', () => document.querySelectorAll('details.claim-card').forEach(d => d.open = true));
+    document.getElementById('collapseAll').addEventListener('click', () => document.querySelectorAll('details.claim-card').forEach(d => d.open = false));
+    document.getElementById('topBtn').addEventListener('click', () => scrollTo({ top: 0, behavior: 'smooth' }));
+  </script>
+</body>
+</html>
