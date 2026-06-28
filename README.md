@@ -39,7 +39,7 @@ printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> ~/.bashrc
 ## Install A Specific Version
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_VERSION=v0.2.6 sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_VERSION=v0.3.0 sh
 ```
 
 ## Custom Install Directory
