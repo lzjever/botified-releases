@@ -144,6 +144,15 @@
       line-height: 1.55;
     }
 
+    .install p code {
+      display: inline;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      font-size: 0.95em;
+      white-space: normal;
+    }
+
     code {
       display: block;
       overflow-x: auto;
@@ -206,8 +215,9 @@
     </section>
 
     <section class="install" aria-label="Install command">
-      <p>安装当前公开 release：</p>
+      <p>安装当前公开 core bundle：</p>
       <code>curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | sh</code>
+      <p>安装器会下载匹配架构的 <code>botified-core-*.tar.gz</code>，安装 <code>botified</code> 和 <code>botified-tui</code>，并复制 bundle 文档。</p>
     </section>
 
     <footer>

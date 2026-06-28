@@ -1381,13 +1381,13 @@ GET /v1/timeline?cursor=42&follow=true</div>
           <h2 class="reveal delay-1">机器人侧部署要像交付一个本体服务，而不是临时跑一个 demo 脚本。</h2>
           <div class="two-col" style="margin-top:44px;">
             <div class="paper-card card reveal-left delay-2" style="padding:38px;">
-              <h3 style="font-size:42px;">single binary</h3>
+              <h3 style="font-size:42px;">core bundle</h3>
               <ul class="clean" style="margin-top:24px;">
-                <li>服务端是 plain Linux binary，适合放到机器人本体或边缘工控机。</li>
+                <li>公开 release 是 core Linux bundle，包含 botified、botified-tui 和文档。</li>
                 <li>当前 release 路径覆盖 x86_64 与 aarch64，方便开发机和机器人侧对齐。</li>
                 <li>YAML 写普通配置，secret 走环境变量，不把密钥写进配置文件。</li>
                 <li>SHA256 handoff 用于交付验收；install script 属于 release 仓库交付层。</li>
-                <li>目标形态是复制二进制即可启动，便于小范围灰度和回滚。</li>
+                <li>目标形态是解包安装固定命令和文档，便于小范围灰度和回滚。</li>
               </ul>
             </div>
             <div class="paper-card card reveal-right delay-3" style="padding:38px;">
@@ -1401,7 +1401,7 @@ GET /v1/timeline?cursor=42&follow=true</div>
               </ul>
             </div>
           </div>
-          <p class="caption reveal delay-4" style="margin-top:26px;">实际落地方式：先在开发机用 macOS 路径调试接口，再把同一套配置收敛到 Linux single binary；现场灰度时只打开试点所需工具，其他执行面保持关闭。</p>
+          <p class="caption reveal delay-4" style="margin-top:26px;">实际落地方式：先在开发机调试接口，再把同一套配置收敛到 Linux core bundle；现场灰度时只打开试点所需工具，其他执行面保持关闭。</p>
         </div>
       </section>
 
@@ -1433,7 +1433,7 @@ GET /v1/timeline?cursor=42&follow=true</div>
               <ul class="clean">
                 <li>make check：fmt、clippy、tests、naming audit。</li>
                 <li>release smoke 与 GLIBC ceiling 作为发布检查项。</li>
-                <li>例：交付前先跑 smoke，确认二进制能启动、接口能响应、依赖边界没破。</li>
+                <li>例：交付前先跑 smoke，确认 core bundle 里的命令能启动、接口能响应、依赖边界没破。</li>
                 <li>细项可从 Makefile 和 release smoke 测试追溯。</li>
               </ul>
             </div>

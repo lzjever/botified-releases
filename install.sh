@@ -4,7 +4,7 @@ set -eu
 repo="${BOTIFIED_RELEASES_REPO:-lzjever/botified-releases}"
 version="${BOTIFIED_VERSION:-latest}"
 install_dir="${BOTIFIED_INSTALL_DIR:-$HOME/.local/bin}"
-bin_name="${BOTIFIED_BIN_NAME:-botified}"
+doc_dir="${BOTIFIED_DOC_DIR:-$HOME/.local/share/doc/botified}"
 
 log() {
 	printf '%s\n' "$*"
@@ -22,6 +22,12 @@ need_downloader() {
 		downloader=wget
 	else
 		fail "curl or wget is required"
+	fi
+}
+
+need_tar() {
+	if ! command -v tar >/dev/null 2>&1; then
+		fail "tar is required"
 	fi
 }
 
@@ -45,10 +51,10 @@ esac
 
 case "$arch" in
 	x86_64|amd64)
-		asset=botified-linux-x86_64-gnu
+		asset=botified-core-linux-x86_64-gnu.tar.gz
 		;;
 	aarch64|arm64)
-		asset=botified-linux-aarch64-gnu
+		asset=botified-core-linux-aarch64-gnu.tar.gz
 		;;
 	*)
 		fail "unsupported CPU architecture: ${arch:-unknown}; supported: x86_64, aarch64"
@@ -56,6 +62,7 @@ case "$arch" in
 esac
 
 need_downloader
+need_tar
 
 tmpdir=$(mktemp -d 2>/dev/null || mktemp -d -t botified-install)
 trap 'rm -rf "$tmpdir"' EXIT HUP INT TERM
@@ -67,7 +74,7 @@ else
 fi
 
 log "Installing botified from $repo ($version)"
-log "Detected target: $asset"
+log "Detected core bundle: $asset"
 
 download "$base_url/$asset" "$tmpdir/$asset"
 download "$base_url/SHA256SUMS" "$tmpdir/SHA256SUMS"
@@ -83,15 +90,36 @@ else
 	log "sha256sum not found; skipping checksum verification."
 fi
 
-mkdir -p "$install_dir"
-if command -v install >/dev/null 2>&1; then
-	install -m 0755 "$tmpdir/$asset" "$install_dir/$bin_name"
-else
-	cp "$tmpdir/$asset" "$install_dir/$bin_name"
-	chmod 0755 "$install_dir/$bin_name"
-fi
+bundle_dir="$tmpdir/bundle"
+mkdir -p "$bundle_dir"
+tar -xzf "$tmpdir/$asset" -C "$bundle_dir"
 
-log "Installed: $install_dir/$bin_name"
+[ -f "$bundle_dir/bin/botified" ] || fail "bundle missing bin/botified"
+[ -f "$bundle_dir/bin/botified-tui" ] || fail "bundle missing bin/botified-tui"
+[ -d "$bundle_dir/share/doc/botified" ] || fail "bundle missing share/doc/botified"
+
+mkdir -p "$install_dir"
+for name in botified botified-tui; do
+	if command -v install >/dev/null 2>&1; then
+		install -m 0755 "$bundle_dir/bin/$name" "$install_dir/$name"
+	else
+		cp "$bundle_dir/bin/$name" "$install_dir/$name"
+		chmod 0755 "$install_dir/$name"
+	fi
+done
+
+mkdir -p "$doc_dir"
+(
+	cd "$bundle_dir/share/doc/botified"
+	tar -cf - .
+) | (
+	cd "$doc_dir"
+	tar -xf -
+)
+
+log "Installed: $install_dir/botified"
+log "Installed: $install_dir/botified-tui"
+log "Installed docs: $doc_dir"
 
 case ":$PATH:" in
 	*":$install_dir:"*)
@@ -99,7 +127,7 @@ case ":$PATH:" in
 		;;
 	*)
 		log ""
-		log "Add this to your shell startup file so your shell can find botified:"
+		log "Add this to your shell startup file so your shell can find botified and botified-tui:"
 		log "  export PATH=\"$install_dir:\$PATH\""
 		log ""
 		log "For bash, you can run:"
@@ -111,3 +139,4 @@ esac
 log ""
 log "Try:"
 log "  botified serve --config botified.yaml"
+log "  botified-tui"

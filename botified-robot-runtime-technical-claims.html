@@ -202,7 +202,7 @@
           <h1>Botified 技术主张</h1>
           <p class="lead">Botified 的原创性不在某一个单点 API，而在一组面向机器人本体执行的组合设计：把多源输入、后台任务、运行中反问、可靠队列、可观测事实和模型成本收敛到一个常驻 runtime 契约中。</p>
           <div class="pill-row">
-            <span class="pill">single active loop</span><span class="pill">detached task</span><span class="pill">task request / reply</span><span class="pill">state / timeline</span><span class="pill">controller boundary</span><span class="pill">single binary</span>
+            <span class="pill">single active loop</span><span class="pill">detached task</span><span class="pill">task request / reply</span><span class="pill">state / timeline</span><span class="pill">controller boundary</span><span class="pill">core bundle</span>
           </div>
         </div>
         <div class="hero-panel">
@@ -223,7 +223,7 @@
           <div class="summary-card"><h3>Core Position</h3><p>Botified 是机器人本体侧或受控控制网络内的常驻 runtime，不是 chat-first 应用。它处理多源事件、排队、后台任务、状态和结果回流。</p></div>
           <div class="summary-card"><h3>Access Cost</h3><p>最低接入不是写插件。非交互 CLI、脚本、本地命令和 curl 调试方式可以继续保留；interactive stdio 只在执行期确实需要 Agent 判断时 opt-in。</p></div>
           <div class="summary-card"><h3>Runtime Contract</h3><p>核心契约包括单 active loop、统一输入队列、detached task、callback、cancel、tail/artifact、<code>/v1/state</code> 和 <code>/v1/timeline</code>。</p></div>
-          <div class="summary-card"><h3>Engineering Maturity</h3><p>single binary、x86_64 / aarch64、botified-tui 自举经验、provider usage / cached token / reasoning token 和成本观测共同构成交付基础。</p></div>
+          <div class="summary-card"><h3>Engineering Maturity</h3><p>core bundle、x86_64 / aarch64、botified 与 botified-tui 双命令、provider usage / cached token / reasoning token 和成本观测共同构成交付基础。</p></div>
         </div>
       </section>
 
@@ -242,7 +242,7 @@
 
       <section class="section" id="maturity">
         <div class="section-head"><div><div class="kicker">Engineering Evidence</div><h2>成熟度工程证据</h2></div><p>工程证据原文完整保留，并用三张卡片分别呈现交付、自举和成本性能。</p></div>
-        <div class="maturity-grid"><div class="paper-card maturity-card"><h3>交付形态足够轻：single binary，复制即可运行</h3><p>Botified 服务端以单文件二进制交付，对使用者来说不需要 Python、Node、Rust toolchain、容器镜像或额外包管理流程；把二进制复制到目标机器即可执行。当前发布链路覆盖 Linux x86_64 和 Linux aarch64/ARM64，适配普通开发机、服务器和机器人侧 ARM 运行环境；macOS 版本正在补齐。发布仓库提供在线安装脚本，自动识别架构、下载对应二进制并校验 SHA256，开发和部署都可以用同一条路径。</p></div><div class="paper-card maturity-card"><h3>Botified 已经用自身能力完成过高复杂度自举开发</h3><p><code>botified-tui</code> 本身就是一次很好的技术证据：它不是一个简单 demo，而是包含 HTTP client、timeline follow、state bootstrap、task dock、输入模型、调试视图和大量测试的独立 TUI 客户端。内部开发中，<code>botified-tui</code> 基本由 Botified 配合 LLMUP + GPT-5.5 在约 72 小时内无人值守完成，说明 Botified 不只适合机器人，也具备通用智能体需要的长期任务推进、代码修改、测试反馈、错误恢复和工程闭环能力。</p></div><div class="paper-card maturity-card"><h3>性能与成本不是事后优化，而是 gate</h3><p>Botified 把 provider usage、cached input tokens、reasoning tokens、turn completed usage、context compaction 和 prompt 稳定性放进运行时和测试视图中，并把 KV cache hit rate 与 cost efficiency 纳入严格性能 gate。对机器人本体执行来说，这一点很关键：本体侧 Agent 需要长期在线，性能波动和 token 成本会直接影响响应速度、部署规模和实际可用性。</p></div></div>
+        <div class="maturity-grid"><div class="paper-card maturity-card"><h3>交付形态足够轻：core bundle，解包即可安装</h3><p>Botified 公开发布以 core Linux bundle 交付，bundle 内包含 <code>bin/botified</code>、<code>bin/botified-tui</code> 和 <code>share/doc/botified</code>；对使用者来说不需要 Python、Node、Rust toolchain、容器镜像或额外包管理流程。当前发布链路覆盖 Linux x86_64 和 Linux aarch64/ARM64，适配普通开发机、服务器和机器人侧 ARM 运行环境；macOS 版本正在补齐。发布仓库提供在线安装脚本，自动识别架构、下载对应 <code>botified-core-*.tar.gz</code> 并校验 SHA256，然后安装两个命令并复制文档，开发和部署都可以用同一条路径。</p></div><div class="paper-card maturity-card"><h3>Botified 已经用自身能力完成过高复杂度自举开发</h3><p><code>botified-tui</code> 本身就是一次很好的技术证据：它不是一个简单 demo，而是包含 HTTP client、timeline follow、state bootstrap、task dock、输入模型、调试视图和大量测试的独立 TUI 客户端。内部开发中，<code>botified-tui</code> 基本由 Botified 配合 LLMUP + GPT-5.5 在约 72 小时内无人值守完成，说明 Botified 不只适合机器人，也具备通用智能体需要的长期任务推进、代码修改、测试反馈、错误恢复和工程闭环能力。</p></div><div class="paper-card maturity-card"><h3>性能与成本不是事后优化，而是 gate</h3><p>Botified 把 provider usage、cached input tokens、reasoning tokens、turn completed usage、context compaction 和 prompt 稳定性放进运行时和测试视图中，并把 KV cache hit rate 与 cost efficiency 纳入严格性能 gate。对机器人本体执行来说，这一点很关键：本体侧 Agent 需要长期在线，性能波动和 token 成本会直接影响响应速度、部署规模和实际可用性。</p></div></div>
       </section>
 
       <section class="claim-section" id="section-A">
@@ -476,7 +476,7 @@
     <summary>
       <span class="claim-num">19</span>
       <span class="claim-title">Botified 让 Agent 适配现有 CLI/脚本开发方式，而不是要求算法模块适配 Agent 框架</span>
-      <span class="claim-tags"><span>callback</span><span>cost</span><span>single binary</span></span>
+      <span class="claim-tags"><span>callback</span><span>cost</span><span>cli</span></span>
     </summary>
     <div class="claim-body">
       <p>算法同事通常已经有 Python、C++、shell、ROS bridge 或本地二进制，可以在终端独立运行和调试。非交互脚本可以保留 <code>argv</code>、<code>env</code>、<code>cwd</code>、<code>stdout</code>、<code>stderr</code>、exit code 和现有 shell pipeline；Botified 只是在外层托管进程生命周期、tail、artifact、callback 和 cancel。这个接入路径降低了算法模块适配成本，因为它不要求一开始就改造成复杂插件、HTTP 服务或 SDK。</p>
@@ -785,7 +785,7 @@
       <div>
         <p class="eyebrow">Claims 45-50</p>
         <h2>模型、工具和部署工程</h2>
-        <p>把模型路由、usage、工具暴露面、single binary 和 skill 经验沉淀放到工程化交付视角中。</p>
+        <p>把模型路由、usage、工具暴露面、core bundle 和 skill 经验沉淀放到工程化交付视角中。</p>
       </div>
     </div>
     <div class="claims-list"><details class="claim-card" id="claim-45">
@@ -824,11 +824,11 @@
 <details class="claim-card" id="claim-48" open>
     <summary>
       <span class="claim-num">48</span>
-      <span class="claim-title">single binary 交付贴近机器人侧部署现实</span>
-      <span class="claim-tags"><span>single binary</span><span>controller</span></span>
+      <span class="claim-title">core bundle 交付贴近机器人侧部署现实</span>
+      <span class="claim-tags"><span>core bundle</span><span>controller</span></span>
     </summary>
     <div class="claim-body">
-      <p>Botified 服务端以 plain Linux binary 交付，当前覆盖 x86_64 和 aarch64/ARM64，配置以 YAML 和环境变量为主，并有release-smoke、GLIBC/架构检查等工程路径。对使用者而言，不需要安装 Python、Node、Rust toolchain、SDK 或容器运行时；复制二进制即可启动服务。发布仓库提供一键在线安装脚本，自动选择 x86_64 或 aarch64 资产并校验 SHA256；macOS 版本进入发布补齐路径后，开发机体验也会进一步降低门槛。</p>
+      <p>Botified 公开发布以 core Linux bundle 交付，当前覆盖 x86_64 和 aarch64/ARM64，配置以 YAML 和环境变量为主，并有 release-smoke、GLIBC/架构检查等工程路径。对使用者而言，不需要安装 Python、Node、Rust toolchain、SDK 或容器运行时；解包后得到 <code>bin/botified</code>、<code>bin/botified-tui</code> 和 <code>share/doc/botified</code>。发布仓库提供一键在线安装脚本，自动选择 x86_64 或 aarch64 的 <code>botified-core-*.tar.gz</code> 资产并校验 SHA256，安装两个命令并复制文档；macOS 版本进入发布补齐路径后，开发机体验也会进一步降低门槛。</p>
       
     </div>
   </details>
@@ -858,7 +858,7 @@
 
       <section class="section" id="thesis">
         <div class="section-head"><div><div class="kicker">Closing Thesis</div><h2>Botified 的核心技术主张</h2></div><p>这组主张说明 Botified 如何把机器人本体侧 Agent 从聊天式工具调用推进到可托管、可观测、可复盘的执行期 runtime。</p></div>
-        <div class="paper-card thesis-card"><p>Botified 的原创性不在某一个单点 API，而在一组面向机器人本体执行的组合设计：单 active agent loop、统一多源输入队列、后台化长任务、异步事件回流、task request/task reply 交互式 stdio、bounded output、durable accept、commit/rollback、timeline/state/active_items、provider capability routing、KV cache/cost gate、single-binary release，以及 LLM/controller/tool 的职责分层。  </p>
+        <div class="paper-card thesis-card"><p>Botified 的原创性不在某一个单点 API，而在一组面向机器人本体执行的组合设计：单 active agent loop、统一多源输入队列、后台化长任务、异步事件回流、task request/task reply 交互式 stdio、bounded output、durable accept、commit/rollback、timeline/state/active_items、provider capability routing、KV cache/cost gate、core-bundle release，以及 LLM/controller/tool 的职责分层。  </p>
 <p>这组设计把机器人 Agent 从“会调用工具的聊天程序”推进到“可以托管长任务、接收运行中反问、响应插话、保留调试事实、优化长期运行成本、并与 controller 解耦协作的本体侧运行时”。对公司内部同事的关键价值不是要求他们迁移开发范式，而是在现有 CLI、脚本、本体服务和控制面之上增加统一的 Agent 协调协议。</p></div>
       </section>
 

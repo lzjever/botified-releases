@@ -1,8 +1,8 @@
 # Botified Releases
 
-Public binary releases for Botified.
+Public core bundle releases for Botified.
 
-This repository only contains release distribution material. The Botified source repository remains private; installable binaries are published as GitHub Release assets here.
+This repository only contains release distribution material. The Botified source repository remains private; installable core bundles are published as GitHub Release assets here.
 
 ## Install
 
@@ -14,16 +14,23 @@ curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/inst
 
 The installer detects Linux x86_64 and Linux aarch64 automatically:
 
-- `botified-linux-x86_64-gnu` for normal Linux PCs and servers.
-- `botified-linux-aarch64-gnu` for ARM64 Linux devices, including Unitree R1-style runtime environments.
+- `botified-core-linux-x86_64-gnu.tar.gz` for normal Linux PCs and servers.
+- `botified-core-linux-aarch64-gnu.tar.gz` for ARM64 Linux devices, including Unitree R1-style runtime environments.
 
-By default, the binary is installed to:
+By default, the commands are installed to:
 
 ```sh
 ~/.local/bin/botified
+~/.local/bin/botified-tui
 ```
 
-If your shell cannot find `botified`, add this to your shell startup file:
+Bundle documentation from `share/doc/botified` is copied to:
+
+```sh
+~/.local/share/doc/botified
+```
+
+If your shell cannot find `botified` or `botified-tui`, add this to your shell startup file:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
@@ -39,7 +46,7 @@ printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> ~/.bashrc
 ## Install A Specific Version
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_VERSION=v0.3.0 sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_VERSION=v0.4.0 sh
 ```
 
 ## Custom Install Directory
@@ -50,21 +57,31 @@ curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/inst
 
 Use a directory that your user can write to, or run with the required permissions.
 
+## Custom Documentation Directory
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_DOC_DIR=/usr/local/share/doc/botified sh
+```
+
+Use a directory that your user can write to, or run with the required permissions.
+
 ## Verify
 
 ```sh
 botified --help
+botified-tui --help
 ```
 
 Checksums are published in each release as `SHA256SUMS`. The installer verifies checksums automatically when `sha256sum` is available.
 
 ## Quick Service Testing
 
-Use curl examples against the HTTP API:
+After starting `botified serve`, use curl examples against the HTTP API:
 
 ```sh
 BASE=http://127.0.0.1:17777
-AUTH='Authorization: Bearer dev'
+BOTIFIED_SERVICE_KEY=dev
+AUTH="Authorization: Bearer $BOTIFIED_SERVICE_KEY"
 curl -s "$BASE/healthz"
 curl -s "$BASE/v1/state" -H "$AUTH" \
   | jq '{state, queue_length, tasks, last_error, session_id, timeline_cursor}'
@@ -85,6 +102,8 @@ the `Authorization` header out.
 
 Each release publishes:
 
-- `botified-linux-x86_64-gnu`
-- `botified-linux-aarch64-gnu`
+- `botified-core-linux-x86_64-gnu.tar.gz`
+- `botified-core-linux-aarch64-gnu.tar.gz`
 - `SHA256SUMS`
+
+The main public release surface is the core bundle only. OpenClaw gateway and playground artifacts are intentionally not part of this release.
