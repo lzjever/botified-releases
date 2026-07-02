@@ -4,6 +4,7 @@ set -eu
 repo="${BOTIFIED_RELEASES_REPO:-lzjever/botified-releases}"
 version="${BOTIFIED_VERSION:-latest}"
 install_dir="${BOTIFIED_INSTALL_DIR:-$HOME/.local/bin}"
+share_dir="${BOTIFIED_SHARE_DIR:-$HOME/.local/share/botified}"
 doc_dir="${BOTIFIED_DOC_DIR:-$HOME/.local/share/doc/botified}"
 
 log() {
@@ -96,6 +97,7 @@ tar -xzf "$tmpdir/$asset" -C "$bundle_dir"
 
 [ -f "$bundle_dir/bin/botified" ] || fail "bundle missing bin/botified"
 [ -f "$bundle_dir/bin/botified-tui" ] || fail "bundle missing bin/botified-tui"
+[ -d "$bundle_dir/share/botified/skills" ] || fail "bundle missing share/botified/skills"
 [ -d "$bundle_dir/share/doc/botified" ] || fail "bundle missing share/doc/botified"
 
 mkdir -p "$install_dir"
@@ -108,6 +110,16 @@ for name in botified botified-tui; do
 	fi
 done
 
+skill_dir="$share_dir/skills"
+mkdir -p "$skill_dir"
+(
+	cd "$bundle_dir/share/botified/skills"
+	tar -cf - .
+) | (
+	cd "$skill_dir"
+	tar -xf -
+)
+
 mkdir -p "$doc_dir"
 (
 	cd "$bundle_dir/share/doc/botified"
@@ -119,6 +131,7 @@ mkdir -p "$doc_dir"
 
 log "Installed: $install_dir/botified"
 log "Installed: $install_dir/botified-tui"
+log "Installed skills: $skill_dir"
 log "Installed docs: $doc_dir"
 
 case ":$PATH:" in
@@ -138,5 +151,7 @@ esac
 
 log ""
 log "Try:"
-log "  botified serve --config botified.yaml"
-log "  botified-tui"
+log "  botified serve --config botified.yaml  # creates missing config, then exits"
+log "  export BOTIFIED_SERVICE_KEY=dev"
+log "  botified serve --mock-provider --config botified.yaml"
+log "  botified-tui --base-url http://127.0.0.1:17777"

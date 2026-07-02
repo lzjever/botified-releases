@@ -30,6 +30,12 @@ Bundle documentation from `share/doc/botified` is copied to:
 ~/.local/share/doc/botified
 ```
 
+Official bundled skills from `share/botified/skills` are copied to:
+
+```sh
+~/.local/share/botified/skills
+```
+
 If your shell cannot find `botified` or `botified-tui`, add this to your shell startup file:
 
 ```sh
@@ -65,22 +71,41 @@ curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/inst
 
 Use a directory that your user can write to, or run with the required permissions.
 
+## Custom Share Directory
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_SHARE_DIR=/usr/local/share/botified sh
+```
+
+Official skills are installed under `$BOTIFIED_SHARE_DIR/skills`.
+Default installs do not need this; if you customize the share directory, run Botified with the same install prefix or set `BOTIFIED_SHARE_DIR` so it can find that share root.
+
 ## Verify
 
 ```sh
 botified --help
 botified-tui --help
+test -f "$HOME/.local/share/botified/skills/botified-module-dev/SKILL.md"
+test -f "$HOME/.local/share/botified/skills/botified-skill-creator/SKILL.md"
 ```
 
 Checksums are published in each release as `SHA256SUMS`. The installer verifies checksums automatically when `sha256sum` is available.
 
 ## Quick Service Testing
 
-After starting `botified serve`, use curl examples against the HTTP API:
+First generate a default config, set the service key, then start the mock provider service:
+
+```sh
+botified serve --config botified.yaml
+export BOTIFIED_SERVICE_KEY=dev
+botified serve --mock-provider --config botified.yaml
+```
+
+In another shell, use curl examples against the HTTP API:
 
 ```sh
 BASE=http://127.0.0.1:17777
-BOTIFIED_SERVICE_KEY=dev
+export BOTIFIED_SERVICE_KEY=dev
 AUTH="Authorization: Bearer $BOTIFIED_SERVICE_KEY"
 curl -s "$BASE/healthz"
 curl -s "$BASE/v1/state" -H "$AUTH" \
