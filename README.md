@@ -1,12 +1,19 @@
 # Botified Releases
 
-Public core bundle releases for Botified.
+Public installable releases for Botified.
 
-This repository only contains release distribution material. The Botified source repository remains private; installable core bundles are published as GitHub Release assets here.
+## What Should I Install?
 
-## Install
+| Need | Install | What it gives you |
+| --- | --- | --- |
+| Run Botified service and terminal UI | Core | `botified`, `botified-tui`, core docs, official built-in skills |
+| Connect Weixin or Feishu/Lark direct messages | Gateway | `botified-claw-gateway`; requires an already running Botified service and Node `>=22.19` |
+| Try robot-side workflows locally | Playground | `botified-playground` virtual office robot modules and its bundled skill; requires Python `>=3.10` |
 
-Run:
+Install only what you need. The core installer does not install gateway or
+playground.
+
+## Install Core
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | sh
@@ -15,85 +22,124 @@ curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/inst
 The installer detects Linux x86_64 and Linux aarch64 automatically:
 
 - `botified-core-linux-x86_64-gnu.tar.gz` for normal Linux PCs and servers.
-- `botified-core-linux-aarch64-gnu.tar.gz` for ARM64 Linux devices, including Unitree R1-style runtime environments.
+- `botified-core-linux-aarch64-gnu.tar.gz` for ARM64 Linux devices.
 
-By default, the commands are installed to:
+By default, commands are installed to:
 
 ```sh
 ~/.local/bin/botified
 ~/.local/bin/botified-tui
 ```
 
-Bundle documentation from `share/doc/botified` is copied to:
+Docs and skills are installed to:
 
 ```sh
 ~/.local/share/doc/botified
-```
-
-Official bundled skills from `share/botified/skills` are copied to:
-
-```sh
 ~/.local/share/botified/skills
 ```
 
-If your shell cannot find `botified` or `botified-tui`, add this to your shell startup file:
+## Install Gateway
 
 ```sh
-export PATH="$HOME/.local/bin:$PATH"
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh | sh
 ```
 
-For bash:
+Then configure the channel you need:
 
 ```sh
-printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> ~/.bashrc
-. ~/.bashrc
+botified-claw-gateway setup \
+  --channel weixin \
+  --botified-base-url http://127.0.0.1:17777 \
+  --service-key <botified-service-key>
+botified-claw-gateway login
+botified-claw-gateway serve
+```
+
+For Feishu/Lark:
+
+```sh
+botified-claw-gateway setup \
+  --channel feishu \
+  --botified-base-url http://127.0.0.1:17777 \
+  --service-key <botified-service-key> \
+  --feishu-app-id <app-id> \
+  --feishu-app-secret <app-secret> \
+  --feishu-domain feishu
+botified-claw-gateway serve
+```
+
+## Install Playground
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-playground.sh | sh
+```
+
+Start the local virtual office robot stack:
+
+```sh
+botified-playground launch --agent off --bus-port 18765
+```
+
+Open the UI:
+
+```text
+http://127.0.0.1:18765/ui/
+```
+
+Trigger a scenario from another shell:
+
+```sh
+botified-playground scenario visitor_delivery --bus http://127.0.0.1:18765 --once
 ```
 
 ## Install A Specific Version
 
+The three installers share the same version pin:
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_VERSION=v0.4.3 sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh | BOTIFIED_VERSION=v0.4.3 sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-playground.sh | BOTIFIED_VERSION=v0.4.3 sh
 ```
 
-## Custom Install Directory
+## Custom Install Locations
+
+Core keeps separate destination variables for commands, docs, and shared files:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | \
+  BOTIFIED_INSTALL_DIR=/usr/local/bin \
+  BOTIFIED_DOC_DIR=/usr/local/share/doc/botified \
+  BOTIFIED_SHARE_DIR=/usr/local/share/botified \
+  sh
 ```
 
-Use a directory that your user can write to, or run with the required permissions.
-
-## Custom Documentation Directory
+Gateway and playground use one prefix because their wrappers depend on matching
+`bin` and `share` directories:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_DOC_DIR=/usr/local/share/doc/botified sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh | BOTIFIED_PREFIX=/usr/local sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-playground.sh | BOTIFIED_PREFIX=/usr/local sh
 ```
 
-Use a directory that your user can write to, or run with the required permissions.
-
-## Custom Share Directory
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_SHARE_DIR=/usr/local/share/botified sh
-```
-
-Official skills are installed under `$BOTIFIED_SHARE_DIR/skills`.
-Default installs do not need this; if you customize the share directory, run Botified with the same install prefix or set `BOTIFIED_SHARE_DIR` so it can find that share root.
+Use a directory your user can write to, or run with the required permissions.
 
 ## Verify
 
 ```sh
 botified --help
 botified-tui --help
-test -f "$HOME/.local/share/botified/skills/botified-module-dev/SKILL.md"
-test -f "$HOME/.local/share/botified/skills/botified-skill-creator/SKILL.md"
+botified-claw-gateway self-check
+botified-playground self-check
 ```
 
-Checksums are published in each release as `SHA256SUMS`. The installer verifies checksums automatically when `sha256sum` is available.
+Checksums are published in each release as `SHA256SUMS`. Installers verify
+checksums automatically when `sha256sum` is available.
 
 ## Quick Service Testing
 
-First generate a default config, set the service key, then start the mock provider service:
+Generate a default config, set the service key, then start the mock provider
+service:
 
 ```sh
 botified serve --config botified.yaml
@@ -101,34 +147,24 @@ export BOTIFIED_SERVICE_KEY=dev
 botified serve --mock-provider --config botified.yaml
 ```
 
-In another shell, use curl examples against the HTTP API:
+In another shell:
 
 ```sh
 BASE=http://127.0.0.1:17777
-export BOTIFIED_SERVICE_KEY=dev
 AUTH="Authorization: Bearer $BOTIFIED_SERVICE_KEY"
 curl -s "$BASE/healthz"
-curl -s "$BASE/v1/state" -H "$AUTH" \
-  | jq '{state, queue_length, tasks, last_error, session_id, timeline_cursor}'
-CURSOR=$(curl -s -X POST "$BASE/v1/messages" \
-  -H "$AUTH" \
-  -H 'Content-Type: application/json' \
-  -d '{"client_message_id":"demo-1","text":"Reply in one short sentence."}' \
-  | jq -r .timeline_cursor)
-curl -s -D headers.txt "$BASE/v1/timeline?cursor=$CURSOR&follow=false" -H "$AUTH"
-NEXT=$(awk 'BEGIN { IGNORECASE=1 } /^x-botified-next-cursor:/ { print $2 }' headers.txt | tr -d '\r')
-curl -N "$BASE/v1/timeline?cursor=$NEXT&follow=true" -H "$AUTH"
+curl -s "$BASE/v1/state" -H "$AUTH"
 ```
 
-If your Botified service has no service key configured, leave
-the `Authorization` header out.
+If your Botified service has no service key configured, leave the
+`Authorization` header out.
 
-## Current Assets
+## Release Assets
 
 Each release publishes:
 
 - `botified-core-linux-x86_64-gnu.tar.gz`
 - `botified-core-linux-aarch64-gnu.tar.gz`
+- `botified-claw-gateway-companion.tar.gz`
+- `botified-playground.tar.gz`
 - `SHA256SUMS`
-
-The main public release surface is the core bundle only. OpenClaw gateway and playground artifacts are intentionally not part of this release.
