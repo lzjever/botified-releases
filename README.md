@@ -138,22 +138,21 @@ checksums automatically when `sha256sum` is available.
 
 ## Quick Service Testing
 
-Generate a default config, set the service key, then start the mock provider
+Generate a mock config, set the service key, then start the mock provider
 service:
 
 ```sh
-botified serve --config botified.yaml
+botified setup --mock --config botified.mock.yaml
 export BOTIFIED_SERVICE_KEY=dev
-botified serve --mock-provider --config botified.yaml
+botified serve --mock-provider --config botified.mock.yaml
 ```
 
 In another shell:
 
 ```sh
 BASE=http://127.0.0.1:17777
-AUTH="Authorization: Bearer $BOTIFIED_SERVICE_KEY"
 curl -s "$BASE/healthz"
-curl -s "$BASE/v1/state" -H "$AUTH"
+curl -s "$BASE/v1/state" -H "Authorization: Bearer dev"
 ```
 
 If your Botified service has no service key configured, leave the
