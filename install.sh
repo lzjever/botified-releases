@@ -151,7 +151,9 @@ esac
 
 log ""
 log "Try:"
-log "  botified serve --config botified.yaml  # creates missing config, then exits"
+log "  botified setup --mock --config botified.mock.yaml"
 log "  export BOTIFIED_SERVICE_KEY=dev"
-log "  botified serve --mock-provider --config botified.yaml"
-log "  botified-tui --base-url http://127.0.0.1:17777"
+log "  botified serve --mock-provider --config botified.mock.yaml"
+log "  botified-tui --base-url http://127.0.0.1:17777 --service-key-env BOTIFIED_SERVICE_KEY"
+log ""
+log "For a real config, run: botified setup --config botified.yaml"
