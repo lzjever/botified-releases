@@ -94,7 +94,7 @@ wrapper="$prefix/bin/botified-playground"
 
 log ""
 log "Installed: $wrapper"
-log "Installed skill: $prefix/share/botified/skills/botified-playground"
+log "Installed skill: $prefix/share/botified/skills/robot-playground"
 case ":$PATH:" in
 	*":$prefix/bin:"*) log "PATH already contains $prefix/bin." ;;
 	*)
