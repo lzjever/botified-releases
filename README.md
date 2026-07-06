@@ -97,9 +97,9 @@ botified-playground scenario visitor_delivery --bus http://127.0.0.1:18765 --onc
 The three installers share the same version pin:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_VERSION=v0.4.6 sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh | BOTIFIED_VERSION=v0.4.6 sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-playground.sh | BOTIFIED_VERSION=v0.4.6 sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_VERSION=v0.4.7 sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh | BOTIFIED_VERSION=v0.4.7 sh
+curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-playground.sh | BOTIFIED_VERSION=v0.4.7 sh
 ```
 
 ## Custom Install Locations
