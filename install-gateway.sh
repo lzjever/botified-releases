@@ -42,7 +42,7 @@ need_checksum() {
 valid_digest() {
 	[ "${#1}" -eq 64 ] || return 1
 	case "$1" in
-		*[!0-9a-f]*) return 1 ;;
+		*[!0123456789abcdef]*) return 1 ;;
 	esac
 }
 

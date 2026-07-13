@@ -273,6 +273,7 @@ run_case() {
 	case_fixture=$7
 	expected_status=$8
 	expected_message=$9
+	expected_checksum=${10:-auto}
 
 	case_root="$tmp_root/cases/$pass_count-$case_name"
 	case_bin="$case_root/bin"
@@ -356,6 +357,9 @@ run_case() {
 	elif [ "$checksum_tool" = none ]; then
 		[ ! -s "$checksum_log" ] || die "$case_name unexpectedly ran a checksum tool"
 	fi
+	if [ "$expected_checksum" = not-called ]; then
+		[ ! -s "$checksum_log" ] || die "$case_name ran a checksum tool before rejecting the manifest digest"
+	fi
 	HTTP_404_ASSET=
 	say_ok "$case_name"
 }
@@ -370,7 +374,7 @@ make_manifest_fixture() {
 	digest=$(digest_file "$fixture_dir/$asset")
 	case "$mode" in
 		wrong) printf '%064d  %s\n' 0 "$asset" > "$dir/SHA256SUMS" ;;
-		malformed) printf 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA  %s\n' "$asset" > "$dir/SHA256SUMS" ;;
+		uppercase) printf 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA  %s\n' "$asset" > "$dir/SHA256SUMS" ;;
 		duplicate) printf '%s  %s\n%s  %s\n' "$digest" "$asset" "$digest" "$asset" > "$dir/SHA256SUMS" ;;
 		missing) printf '%064d  botified-playgroundXtarYgz\n' 0 > "$dir/SHA256SUMS" ;;
 		*) die "unknown manifest fixture mode $mode" ;;
@@ -411,10 +415,19 @@ asset=botified-core-linux-x86_64-gnu.tar.gz
 wrong_fixture=$(make_manifest_fixture wrong "$asset" wrong)
 run_case "wrong checksum fails" install.sh Linux x86_64 curl sha256sum "$wrong_fixture" failure "checksum mismatch"
 
-asset=botified-claw-gateway-companion.tar.gz
-malformed_fixture=$(make_manifest_fixture malformed "$asset" malformed)
-run_case "checksum must be 64 lowercase hex" install-gateway.sh Linux x86_64 curl shasum "$malformed_fixture" failure "invalid checksum"
+asset=botified-core-linux-x86_64-gnu.tar.gz
+uppercase_core_fixture=$(make_manifest_fixture uppercase-core "$asset" uppercase)
+run_case "core rejects uppercase checksum before hashing" install.sh Linux x86_64 curl sha256sum "$uppercase_core_fixture" failure "invalid checksum" not-called
 
+asset=botified-claw-gateway-companion.tar.gz
+uppercase_gateway_fixture=$(make_manifest_fixture uppercase-gateway "$asset" uppercase)
+run_case "gateway rejects uppercase checksum before hashing" install-gateway.sh Linux x86_64 curl shasum "$uppercase_gateway_fixture" failure "invalid checksum" not-called
+
+asset=botified-playground.tar.gz
+uppercase_playground_fixture=$(make_manifest_fixture uppercase-playground "$asset" uppercase)
+run_case "playground rejects uppercase checksum before hashing" install-playground.sh Linux x86_64 wget sha256sum "$uppercase_playground_fixture" failure "invalid checksum" not-called
+
+asset=botified-claw-gateway-companion.tar.gz
 duplicate_fixture=$(make_manifest_fixture duplicate "$asset" duplicate)
 run_case "duplicate target checksum fails" install-gateway.sh Linux x86_64 wget sha256sum "$duplicate_fixture" failure "checksum for $asset must appear exactly once"
 
