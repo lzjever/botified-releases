@@ -32,6 +32,63 @@ need_tar() {
 	fi
 }
 
+need_checksum() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		checksum_tool=sha256sum
+	elif command -v shasum >/dev/null 2>&1; then
+		checksum_tool=shasum
+	else
+		fail "sha256sum or shasum is required"
+	fi
+}
+
+valid_digest() {
+	[ "${#1}" -eq 64 ] || return 1
+	case "$1" in
+		*[!0-9a-f]*) return 1 ;;
+	esac
+}
+
+file_digest() {
+	file=$1
+	if [ "$checksum_tool" = sha256sum ]; then
+		output=$(sha256sum "$file") || fail "could not checksum $asset"
+	else
+		output=$(shasum -a 256 "$file") || fail "could not checksum $asset"
+	fi
+	digest=${output%% *}
+	valid_digest "$digest" || fail "checksum tool returned an invalid digest for $asset"
+	printf '%s\n' "$digest"
+}
+
+verify_checksum() {
+	manifest=$1
+	file=$2
+	target=$3
+	expected=
+	matches=0
+	separator='  '
+
+	while IFS= read -r line || [ -n "$line" ]; do
+		case "$line" in
+			*"$separator"*)
+				listed_digest=${line%%"$separator"*}
+				listed_name=${line#*"$separator"}
+				;;
+			*) continue ;;
+		esac
+		if [ "$listed_name" = "$target" ]; then
+			matches=$((matches + 1))
+			expected=$listed_digest
+		fi
+	done < "$manifest"
+
+	[ "$matches" -eq 1 ] || fail "checksum for $target must appear exactly once"
+	valid_digest "$expected" || fail "invalid checksum for $target; expected 64 lowercase hex characters"
+	actual=$(file_digest "$file")
+	[ "$actual" = "$expected" ] || fail "checksum mismatch for $target"
+}
+
 download() {
 	url=$1
 	out=$2
@@ -45,20 +102,18 @@ download() {
 os=$(uname -s 2>/dev/null || true)
 arch=$(uname -m 2>/dev/null || true)
 
-case "$os" in
-	Linux) ;;
-	*) fail "unsupported OS: ${os:-unknown}; only Linux binaries are published" ;;
-esac
-
-case "$arch" in
-	x86_64|amd64)
+case "$os:$arch" in
+	Linux:x86_64|Linux:amd64)
 		asset=botified-core-linux-x86_64-gnu.tar.gz
 		;;
-	aarch64|arm64)
+	Linux:aarch64|Linux:arm64)
 		asset=botified-core-linux-aarch64-gnu.tar.gz
 		;;
+	Darwin:x86_64|Darwin:arm64)
+		asset=botified-core-macos-universal2.tar.gz
+		;;
 	*)
-		fail "unsupported CPU architecture: ${arch:-unknown}; supported: x86_64, aarch64"
+		fail "unsupported platform: ${os:-unknown} ${arch:-unknown}; supported: Linux x86_64/aarch64 and Darwin x86_64/arm64"
 		;;
 esac
 
@@ -80,16 +135,9 @@ log "Detected core bundle: $asset"
 download "$base_url/$asset" "$tmpdir/$asset"
 download "$base_url/SHA256SUMS" "$tmpdir/SHA256SUMS"
 
-if command -v sha256sum >/dev/null 2>&1; then
-	(
-		cd "$tmpdir"
-		grep "  $asset\$" SHA256SUMS > "$asset.sha256" || fail "checksum for $asset not found"
-		sha256sum -c "$asset.sha256" >/dev/null
-	)
-	log "Checksum verified."
-else
-	log "sha256sum not found; skipping checksum verification."
-fi
+need_checksum
+verify_checksum "$tmpdir/SHA256SUMS" "$tmpdir/$asset" "$asset"
+log "Checksum verified."
 
 bundle_dir="$tmpdir/bundle"
 mkdir -p "$bundle_dir"
