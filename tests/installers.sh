@@ -55,7 +55,6 @@ write_checksums() {
 		botified-claw-gateway-companion.tar.gz \
 		botified-core-linux-aarch64-gnu.tar.gz \
 		botified-core-linux-x86_64-gnu.tar.gz \
-		botified-core-macos-universal2.tar.gz \
 		botified-playground.tar.gz
 	do
 		printf '%s  %s\n' "$(digest_file "$dir/$asset")" "$asset" >> "$dir/SHA256SUMS"
@@ -91,7 +90,6 @@ make_generated_fixtures() {
 
 	$host_tar -C "$stage/core" -czf "$dir/botified-core-linux-x86_64-gnu.tar.gz" .
 	cp "$dir/botified-core-linux-x86_64-gnu.tar.gz" "$dir/botified-core-linux-aarch64-gnu.tar.gz"
-	cp "$dir/botified-core-linux-x86_64-gnu.tar.gz" "$dir/botified-core-macos-universal2.tar.gz"
 	$host_tar -C "$stage/gateway" -czf "$dir/botified-claw-gateway-companion.tar.gz" .
 	$host_tar -C "$stage/playground" -czf "$dir/botified-playground.tar.gz" .
 	write_checksums "$dir"
@@ -110,7 +108,6 @@ fi
 for required in \
 	botified-core-linux-x86_64-gnu.tar.gz \
 	botified-core-linux-aarch64-gnu.tar.gz \
-	botified-core-macos-universal2.tar.gz \
 	botified-claw-gateway-companion.tar.gz \
 	botified-playground.tar.gz \
 	SHA256SUMS
@@ -255,7 +252,6 @@ expected_asset() {
 			case "$os:$arch" in
 				Linux:x86_64) printf '%s\n' botified-core-linux-x86_64-gnu.tar.gz ;;
 				Linux:aarch64) printf '%s\n' botified-core-linux-aarch64-gnu.tar.gz ;;
-				Darwin:x86_64|Darwin:arm64) printf '%s\n' botified-core-macos-universal2.tar.gz ;;
 				*) die "unexpected test platform $os:$arch" ;;
 			esac
 			;;
@@ -364,6 +360,50 @@ run_case() {
 	say_ok "$case_name"
 }
 
+run_unsupported_core_case() {
+	case_name=$1
+	os=$2
+	arch=$3
+
+	case_root="$tmp_root/cases/$pass_count-$case_name"
+	case_bin="$case_root/bin"
+	home="$case_root/home"
+	prefix="$case_root/prefix"
+	output="$case_root/output"
+	download_log="$case_root/downloads"
+	checksum_log="$case_root/checksums"
+	mkdir -p "$case_root" "$home"
+	: > "$download_log"
+	: > "$checksum_log"
+	make_case_bin "$case_bin" curl both
+
+	set +e
+	PATH="$case_bin:$base_bin" \
+	HOME="$home" \
+	SHIM_OS="$os" \
+	SHIM_ARCH="$arch" \
+	SHIM_VERSION="$version" \
+	SHIM_FIXTURE_DIR="$fixture_dir" \
+	SHIM_DOWNLOAD_LOG="$download_log" \
+	SHIM_CHECKSUM_LOG="$checksum_log" \
+	SHIM_REAL_HASH="$host_hash" \
+	SHIM_REAL_HASH_KIND="$host_hash_kind" \
+	BOTIFIED_VERSION="$version" \
+	BOTIFIED_INSTALL_DIR="$prefix/bin" \
+	BOTIFIED_SHARE_DIR="$prefix/share/botified" \
+	BOTIFIED_DOC_DIR="$prefix/share/doc/botified" \
+	"$host_sh" "$repo_root/install.sh" > "$output" 2>&1
+	status=$?
+	set -e
+
+	[ "$status" -ne 0 ] || die "$case_name unexpectedly succeeded"
+	assert_contains "$output" "unsupported platform: $os $arch; supported: Linux x86_64/aarch64" "$case_name"
+	[ ! -s "$download_log" ] || die "$case_name attempted a download before rejecting the platform"
+	[ ! -s "$checksum_log" ] || die "$case_name attempted a checksum before rejecting the platform"
+	[ ! -e "$prefix/bin/botified" ] || die "$case_name installed botified before rejecting the platform"
+	say_ok "$case_name"
+}
+
 make_manifest_fixture() {
 	name=$1
 	asset=$2
@@ -402,8 +442,8 @@ make_invalid_tar_fixture() {
 
 run_case "core Linux x86_64 prefers sha256sum via curl" install.sh Linux x86_64 curl both "$fixture_dir" success ""
 run_case "core Linux aarch64 via wget and sha256sum" install.sh Linux aarch64 wget sha256sum "$fixture_dir" success ""
-run_case "core Darwin x86_64 maps to universal2 via curl and shasum" install.sh Darwin x86_64 curl shasum "$fixture_dir" success ""
-run_case "core Darwin arm64 maps to universal2 via wget and shasum" install.sh Darwin arm64 wget shasum "$fixture_dir" success ""
+run_unsupported_core_case "core rejects Darwin x86_64 before download" Darwin x86_64
+run_unsupported_core_case "core rejects Darwin arm64 before download" Darwin arm64
 run_case "gateway normal install" install-gateway.sh Linux x86_64 curl sha256sum "$fixture_dir" success ""
 run_case "playground normal install" install-playground.sh Linux x86_64 wget shasum "$fixture_dir" success ""
 

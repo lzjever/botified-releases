@@ -103,17 +103,14 @@ os=$(uname -s 2>/dev/null || true)
 arch=$(uname -m 2>/dev/null || true)
 
 case "$os:$arch" in
-	Linux:x86_64|Linux:amd64)
+	Linux:x86_64)
 		asset=botified-core-linux-x86_64-gnu.tar.gz
 		;;
-	Linux:aarch64|Linux:arm64)
+	Linux:aarch64)
 		asset=botified-core-linux-aarch64-gnu.tar.gz
 		;;
-	Darwin:x86_64|Darwin:arm64)
-		asset=botified-core-macos-universal2.tar.gz
-		;;
 	*)
-		fail "unsupported platform: ${os:-unknown} ${arch:-unknown}; supported: Linux x86_64/aarch64 and Darwin x86_64/arm64"
+		fail "unsupported platform: ${os:-unknown} ${arch:-unknown}; supported: Linux x86_64/aarch64"
 		;;
 esac
 

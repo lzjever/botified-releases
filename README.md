@@ -15,7 +15,7 @@ playground.
 
 ## Install Core
 
-On Linux or macOS, run:
+On Linux x86_64 or aarch64, run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | sh
@@ -25,11 +25,9 @@ The installer detects the operating system and architecture automatically:
 
 - `botified-core-linux-x86_64-gnu.tar.gz` for normal Linux PCs and servers.
 - `botified-core-linux-aarch64-gnu.tar.gz` for ARM64 Linux devices.
-- `botified-core-macos-universal2.tar.gz` for Intel and Apple silicon Macs.
 
-macOS support starts at macOS 12. The macOS bundle is a universal2 build for
-both x86_64 and arm64. Its executables are ad-hoc signed but are not notarized
-by Apple, so macOS may show a security prompt when you first run them.
+Core does not support macOS. On Darwin or any other unsupported platform, the
+installer exits before downloading release assets.
 
 By default, commands are installed to:
 
@@ -199,7 +197,6 @@ Each release publishes:
 
 - `botified-core-linux-x86_64-gnu.tar.gz`
 - `botified-core-linux-aarch64-gnu.tar.gz`
-- `botified-core-macos-universal2.tar.gz`
 - `botified-claw-gateway-companion.tar.gz`
 - `botified-playground.tar.gz`
 - `SHA256SUMS`
