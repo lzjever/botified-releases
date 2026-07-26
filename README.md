@@ -7,7 +7,7 @@ Public installable releases for Botified.
 | Need | Install | What it gives you |
 | --- | --- | --- |
 | Run Botified service and terminal UI | Core | `botified`, `botified-tui`, core docs, official built-in skills |
-| Connect Weixin, Feishu/Lark, or Matrix direct messages | Gateway | `botified-claw-gateway`; requires an already running Botified service and Node `>=22.19` |
+| Connect Weixin, Feishu/Lark, or Matrix direct messages | Gateway | `botified-claw-gateway`; requires an already running Botified service and Node `>=22.19 <23` |
 | Try robot-side workflows locally | Playground | `botified-playground` virtual office robot modules and its bundled skill; requires Python `>=3.10` |
 
 Install only what you need. The core installer does not install gateway or
@@ -18,7 +18,12 @@ playground.
 On Linux x86_64 or aarch64, run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | sh
+installer=$(mktemp)
+trap 'rm -f "$installer"' EXIT
+curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
+  -o "$installer" \
+  https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh
+sh "$installer"
 ```
 
 The installer detects the operating system and architecture automatically:
@@ -54,7 +59,12 @@ botified-tui --help
 ## Install Gateway
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh | sh
+installer=$(mktemp)
+trap 'rm -f "$installer"' EXIT
+curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
+  -o "$installer" \
+  https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh
+sh "$installer"
 ```
 
 Then configure the channel you need:
@@ -105,7 +115,12 @@ automatic invitation acceptance.
 ## Install Playground
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-playground.sh | sh
+installer=$(mktemp)
+trap 'rm -f "$installer"' EXIT
+curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
+  -o "$installer" \
+  https://raw.githubusercontent.com/lzjever/botified-releases/main/install-playground.sh
+sh "$installer"
 ```
 
 Start the local virtual office robot stack:
@@ -131,9 +146,16 @@ botified-playground scenario visitor_delivery --bus http://127.0.0.1:18765 --onc
 The three installers share the same version pin:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | BOTIFIED_VERSION=vX.Y.Z sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh | BOTIFIED_VERSION=vX.Y.Z sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-playground.sh | BOTIFIED_VERSION=vX.Y.Z sh
+installer_dir=$(mktemp -d)
+trap 'rm -rf "$installer_dir"' EXIT
+for component in install install-gateway install-playground; do
+  curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
+    -o "$installer_dir/$component.sh" \
+    "https://raw.githubusercontent.com/lzjever/botified-releases/main/$component.sh"
+done
+BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install.sh"
+BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install-gateway.sh"
+BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install-playground.sh"
 ```
 
 Replace `vX.Y.Z` with a published release tag. Versioned downloads use URLs
@@ -158,19 +180,31 @@ export PATH="$HOME/.local/bin:$PATH"
 Core keeps separate destination variables for commands, docs, and shared files:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | \
+installer=$(mktemp)
+trap 'rm -f "$installer"' EXIT
+curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
+  -o "$installer" \
+  https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh
+env \
   BOTIFIED_INSTALL_DIR=/usr/local/bin \
   BOTIFIED_DOC_DIR=/usr/local/share/doc/botified \
   BOTIFIED_SHARE_DIR=/usr/local/share/botified \
-  sh
+  sh "$installer"
 ```
 
 Gateway and playground use one prefix because their wrappers depend on matching
 `bin` and `share` directories:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh | BOTIFIED_PREFIX=/usr/local sh
-curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-playground.sh | BOTIFIED_PREFIX=/usr/local sh
+installer_dir=$(mktemp -d)
+trap 'rm -rf "$installer_dir"' EXIT
+for component in install-gateway install-playground; do
+  curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
+    -o "$installer_dir/$component.sh" \
+    "https://raw.githubusercontent.com/lzjever/botified-releases/main/$component.sh"
+done
+BOTIFIED_PREFIX=/usr/local sh "$installer_dir/install-gateway.sh"
+BOTIFIED_PREFIX=/usr/local sh "$installer_dir/install-playground.sh"
 ```
 
 Use a directory your user can write to, or run with the required permissions.

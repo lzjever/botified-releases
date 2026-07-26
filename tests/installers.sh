@@ -5,6 +5,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 fixture_dir=${1:-${BOTIFIED_INSTALLER_FIXTURES:-}}
 version=v9.8.7
+generated_fixtures=false
 
 pass_count=0
 
@@ -70,6 +71,8 @@ make_generated_fixtures() {
 		"$stage/core/share/doc/botified" \
 		"$stage/gateway/bin" \
 		"$stage/gateway/share/botified/gateway/dist/src" \
+		"$stage/gateway/share/doc/botified-claw-gateway" \
+		"$stage/gateway/share/botified-claw-gateway/examples" \
 		"$stage/playground/bin" \
 		"$stage/playground/share/botified/skills/robot-playground"
 
@@ -83,6 +86,8 @@ make_generated_fixtures() {
 	printf '#!/bin/sh\n[ "${1:-}" = self-check ]\n' > "$stage/gateway/bin/botified-claw-gateway"
 	chmod 0755 "$stage/gateway/bin/botified-claw-gateway"
 	printf 'fixture gateway\n' > "$stage/gateway/share/botified/gateway/dist/src/cli.js"
+	printf 'fixture gateway docs\n' > "$stage/gateway/share/doc/botified-claw-gateway/README.md"
+	printf 'fixture gateway example\n' > "$stage/gateway/share/botified-claw-gateway/examples/botified-claw-gateway.yaml"
 
 	printf '#!/bin/sh\n[ "${1:-}" = self-check ]\n' > "$stage/playground/bin/botified-playground"
 	chmod 0755 "$stage/playground/bin/botified-playground"
@@ -98,6 +103,7 @@ make_generated_fixtures() {
 if [ -z "$fixture_dir" ]; then
 	fixture_dir="$tmp_root/fixtures"
 	make_generated_fixtures "$fixture_dir"
+	generated_fixtures=true
 else
 	case "$fixture_dir" in
 		/*) ;;
@@ -119,7 +125,7 @@ base_bin="$tmp_root/base-bin"
 shim_src="$tmp_root/shim-src"
 mkdir -p "$base_bin" "$shim_src"
 
-for command_name in sh env uname mktemp rm mkdir tar gzip install cp chmod dirname; do
+for command_name in sh env uname mktemp rm mkdir mv tar gzip install cp chmod dirname; do
 	command_path=$(host_command "$command_name")
 	ln -s "$command_path" "$base_bin/$command_name"
 done
@@ -140,14 +146,27 @@ set -eu
 tool=${0##*/}
 case "$tool" in
 	curl)
-		[ "$#" -eq 4 ] && [ "$1" = -fsSL ] && [ "$3" = -o ] || exit 90
-		url=$2
-		out=$4
+		[ "$#" -eq 11 ] &&
+			[ "$1" = -fL ] &&
+			[ "$2" = --retry ] &&
+			[ "$3" = 3 ] &&
+			[ "$4" = --retry-all-errors ] &&
+			[ "$5" = --connect-timeout ] &&
+			[ "$6" = 15 ] &&
+			[ "$7" = --silent ] &&
+			[ "$8" = --show-error ] &&
+			[ "$9" = -o ] || exit 90
+		out=${10}
+		url=${11}
 		;;
 	wget)
-		[ "$#" -eq 3 ] && [ "$1" = -qO ] || exit 91
-		out=$2
-		url=$3
+		[ "$#" -eq 6 ] &&
+			[ "$1" = -q ] &&
+			[ "$2" = --tries=4 ] &&
+			[ "$3" = --timeout=30 ] &&
+			[ "$4" = -O ] || exit 91
+		out=$5
+		url=$6
 		;;
 	*) exit 92 ;;
 esac
@@ -283,6 +302,15 @@ run_case() {
 	: > "$checksum_log"
 	make_case_bin "$case_bin" "$downloader" "$checksum_tool"
 	asset=$(expected_asset "$script" "$os" "$arch")
+	if [ "$expected_status" = success ] && [ "$script" = install-gateway.sh ]; then
+		mkdir -p \
+			"$prefix/share/botified/gateway" \
+			"$prefix/share/doc/botified-claw-gateway" \
+			"$prefix/share/botified-claw-gateway/examples"
+		printf 'stale\n' > "$prefix/share/botified/gateway/removed-runtime-file"
+		printf 'stale\n' > "$prefix/share/doc/botified-claw-gateway/removed-doc-file"
+		printf 'stale\n' > "$prefix/share/botified-claw-gateway/examples/removed-example-file"
+	fi
 
 	set +e
 	PATH="$case_bin:$base_bin" \
@@ -319,7 +347,28 @@ run_case() {
 				[ -d "$prefix/share/botified/skills" ] || die "$case_name did not install skills"
 				[ -d "$prefix/share/doc/botified" ] || die "$case_name did not install docs"
 				;;
-			install-gateway.sh) [ -x "$prefix/bin/botified-claw-gateway" ] || die "$case_name did not install gateway" ;;
+			install-gateway.sh)
+				[ -x "$prefix/bin/botified-claw-gateway" ] || die "$case_name did not install gateway"
+				[ -s "$prefix/share/botified/gateway/dist/src/cli.js" ] ||
+					die "$case_name did not install gateway runtime"
+				[ -s "$prefix/share/doc/botified-claw-gateway/README.md" ] ||
+					die "$case_name did not install gateway docs"
+				[ -s "$prefix/share/botified-claw-gateway/examples/botified-claw-gateway.yaml" ] ||
+					die "$case_name did not install gateway example"
+				if [ "$generated_fixtures" = true ]; then
+					assert_contains "$prefix/share/botified/gateway/dist/src/cli.js" "fixture gateway" "$case_name"
+					assert_contains "$prefix/share/doc/botified-claw-gateway/README.md" "fixture gateway docs" "$case_name"
+					assert_contains "$prefix/share/botified-claw-gateway/examples/botified-claw-gateway.yaml" "fixture gateway example" "$case_name"
+				fi
+				"$prefix/bin/botified-claw-gateway" self-check ||
+					die "$case_name installed gateway failed self-check"
+				[ ! -e "$prefix/share/botified/gateway/removed-runtime-file" ] ||
+					die "$case_name retained stale runtime files"
+				[ ! -e "$prefix/share/doc/botified-claw-gateway/removed-doc-file" ] ||
+					die "$case_name retained stale docs"
+				[ ! -e "$prefix/share/botified-claw-gateway/examples/removed-example-file" ] ||
+					die "$case_name retained stale examples"
+				;;
 			install-playground.sh) [ -x "$prefix/bin/botified-playground" ] || die "$case_name did not install playground" ;;
 		esac
 	else

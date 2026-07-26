@@ -87,21 +87,25 @@ verify_checksum() {
 }
 
 need_node() {
-	command -v node >/dev/null 2>&1 || fail "Node >=22.19 is required"
-	if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1);'; then
-		found=$(node -p 'process.versions.node' 2>/dev/null || printf unknown)
-		fail "Node >=22.19 is required; found $found"
-	fi
+	command -v node >/dev/null 2>&1 || fail "Node >=22.19 <23 is required"
 }
 
 download() {
 	url=$1
 	out=$2
 	if [ "$downloader" = curl ]; then
-		curl -fsSL "$url" -o "$out"
+		curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error -o "$out" "$url"
 	else
-		wget -qO "$out" "$url"
+		wget -q --tries=4 --timeout=30 -O "$out" "$url"
 	fi
+}
+
+replace_tree() {
+	source_dir=$1
+	destination_dir=$2
+	mkdir -p "$(dirname "$destination_dir")"
+	rm -rf "$destination_dir"
+	mv "$source_dir" "$destination_dir"
 }
 
 need_downloader
@@ -128,11 +132,32 @@ verify_checksum "$tmpdir/SHA256SUMS" "$tmpdir/$asset" "$asset"
 log "Checksum verified."
 
 mkdir -p "$prefix"
-tar -xzf "$tmpdir/$asset" -C "$prefix"
+bundle_dir="$tmpdir/bundle"
+mkdir -p "$bundle_dir"
+tar -xzf "$tmpdir/$asset" -C "$bundle_dir"
 
+staged_wrapper="$bundle_dir/bin/botified-claw-gateway"
+[ -x "$staged_wrapper" ] || fail "bundle missing bin/botified-claw-gateway"
+for staged_tree in \
+	"$bundle_dir/share/botified/gateway" \
+	"$bundle_dir/share/doc/botified-claw-gateway" \
+	"$bundle_dir/share/botified-claw-gateway/examples"
+do
+	[ -d "$staged_tree" ] || fail "bundle missing ${staged_tree#"$bundle_dir"/}"
+done
+"$staged_wrapper" self-check
+
+replace_tree "$bundle_dir/share/botified/gateway" "$prefix/share/botified/gateway"
+replace_tree "$bundle_dir/share/doc/botified-claw-gateway" "$prefix/share/doc/botified-claw-gateway"
+replace_tree "$bundle_dir/share/botified-claw-gateway/examples" "$prefix/share/botified-claw-gateway/examples"
+mkdir -p "$prefix/bin"
 wrapper="$prefix/bin/botified-claw-gateway"
-[ -x "$wrapper" ] || fail "bundle missing $wrapper"
-"$wrapper" self-check
+if command -v install >/dev/null 2>&1; then
+	install -m 0755 "$staged_wrapper" "$wrapper"
+else
+	cp "$staged_wrapper" "$wrapper"
+	chmod 0755 "$wrapper"
+fi
 
 log ""
 log "Installed: $wrapper"
@@ -147,6 +172,5 @@ esac
 
 log ""
 log "Try:"
-log "  botified-claw-gateway setup --channel weixin --botified-base-url http://127.0.0.1:17777 --service-key <key>"
-log "  botified-claw-gateway login"
-log "  botified-claw-gateway serve"
+log "  botified-claw-gateway --help"
+log "  botified-claw-gateway self-check"

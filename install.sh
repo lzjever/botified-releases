@@ -93,9 +93,9 @@ download() {
 	url=$1
 	out=$2
 	if [ "$downloader" = curl ]; then
-		curl -fsSL "$url" -o "$out"
+		curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error -o "$out" "$url"
 	else
-		wget -qO "$out" "$url"
+		wget -q --tries=4 --timeout=30 -O "$out" "$url"
 	fi
 }
 
