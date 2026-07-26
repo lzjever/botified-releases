@@ -7,7 +7,7 @@ Public installable releases for Botified.
 | Need | Install | What it gives you |
 | --- | --- | --- |
 | Run Botified service and terminal UI | Core | `botified`, `botified-tui`, core docs, official built-in skills |
-| Connect Weixin or Feishu/Lark direct messages | Gateway | `botified-claw-gateway`; requires an already running Botified service and Node `>=22.19` |
+| Connect Weixin, Feishu/Lark, or Matrix direct messages | Gateway | `botified-claw-gateway`; requires an already running Botified service and Node `>=22.19` |
 | Try robot-side workflows locally | Playground | `botified-playground` virtual office robot modules and its bundled skill; requires Python `>=3.10` |
 
 Install only what you need. The core installer does not install gateway or
@@ -80,6 +80,27 @@ botified-claw-gateway setup \
   --feishu-domain feishu
 botified-claw-gateway serve
 ```
+
+For Matrix, create an unencrypted direct room containing exactly the gateway
+account and one trusted user. The gateway account must manually join the room;
+the Gateway does not create rooms or accept invitations. Its access token
+selects the bot MXID, so there is no separate bot ID setting:
+
+```sh
+export MATRIX_ACCESS_TOKEN="<matrix-access-token>"
+botified-claw-gateway setup \
+  --channel matrix \
+  --botified-base-url http://127.0.0.1:17777 \
+  --service-key <botified-service-key> \
+  --matrix-homeserver https://matrix.walayun.com \
+  --matrix-allow-from "@trusted-user:matrix.walayun.com"
+unset MATRIX_ACCESS_TOKEN
+botified-claw-gateway serve
+```
+
+Matrix supports allowlisted text and standard media in manually joined,
+unencrypted direct rooms. It does not support groups, encrypted rooms, or
+automatic invitation acceptance.
 
 ## Install Playground
 
