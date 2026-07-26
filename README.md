@@ -52,7 +52,7 @@ Make sure `~/.local/bin` is on `PATH`. The installer prints the shell command
 to add it when needed. Verify the core install with:
 
 ```sh
-botified --help
+botified --version
 botified-tui --help
 ```
 
@@ -111,6 +111,25 @@ botified-claw-gateway serve
 Matrix supports allowlisted text and standard media in manually joined,
 unencrypted direct rooms. It does not support groups, encrypted rooms, or
 automatic invitation acceptance.
+
+## Upgrade A Core + Gateway Host
+
+Core and Gateway are separate installs. On a host that runs both, pin one
+release and rerun both downloaded installers from the directory that contains
+them:
+
+```sh
+VERSION=vX.Y.Z
+BOTIFIED_VERSION="$VERSION" sh ./install.sh
+BOTIFIED_VERSION="$VERSION" sh ./install-gateway.sh
+
+botified --version
+botified-claw-gateway --version
+botified-claw-gateway self-check
+```
+
+The two version commands must report `${VERSION#v}`. The Core installer does
+not upgrade an existing Gateway; it prints a warning when it detects one.
 
 ## Install Playground
 

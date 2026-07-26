@@ -289,6 +289,7 @@ run_case() {
 	expected_status=$8
 	expected_message=$9
 	expected_checksum=${10:-auto}
+	existing_gateway=${11:-false}
 
 	case_root="$tmp_root/cases/$pass_count-$case_name"
 	case_bin="$case_root/bin"
@@ -310,6 +311,11 @@ run_case() {
 		printf 'stale\n' > "$prefix/share/botified/gateway/removed-runtime-file"
 		printf 'stale\n' > "$prefix/share/doc/botified-claw-gateway/removed-doc-file"
 		printf 'stale\n' > "$prefix/share/botified-claw-gateway/examples/removed-example-file"
+	fi
+	if [ "$existing_gateway" = true ]; then
+		mkdir -p "$prefix/bin"
+		printf '#!/bin/sh\nexit 0\n' > "$prefix/bin/botified-claw-gateway"
+		chmod 0755 "$prefix/bin/botified-claw-gateway"
 	fi
 
 	set +e
@@ -346,6 +352,11 @@ run_case() {
 				[ -x "$prefix/bin/botified-tui" ] || die "$case_name did not install botified-tui"
 				[ -d "$prefix/share/botified/skills" ] || die "$case_name did not install skills"
 				[ -d "$prefix/share/doc/botified" ] || die "$case_name did not install docs"
+				if [ "$existing_gateway" = true ]; then
+					assert_contains "$output" \
+						"botified-claw-gateway is installed but was not upgraded; run install-gateway.sh with BOTIFIED_VERSION=$version" \
+						"$case_name"
+				fi
 				;;
 			install-gateway.sh)
 				[ -x "$prefix/bin/botified-claw-gateway" ] || die "$case_name did not install gateway"
@@ -491,6 +502,7 @@ make_invalid_tar_fixture() {
 
 run_case "core Linux x86_64 prefers sha256sum via curl" install.sh Linux x86_64 curl both "$fixture_dir" success ""
 run_case "core Linux aarch64 via wget and sha256sum" install.sh Linux aarch64 wget sha256sum "$fixture_dir" success ""
+run_case "core warns when gateway needs a separate upgrade" install.sh Linux x86_64 curl sha256sum "$fixture_dir" success "" auto true
 run_unsupported_core_case "core rejects Darwin x86_64 before download" Darwin x86_64
 run_unsupported_core_case "core rejects Darwin arm64 before download" Darwin arm64
 run_case "gateway normal install" install-gateway.sh Linux x86_64 curl sha256sum "$fixture_dir" success ""
