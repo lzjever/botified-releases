@@ -28,7 +28,7 @@ sh "$installer"
 
 The installer detects the operating system and architecture automatically:
 
-- `botified-core-linux-x86_64-gnu.tar.gz` for normal Linux PCs and servers.
+- `botified-core-linux-x86_64-musl.tar.gz`, a static-musl build for x86_64 Linux PCs and servers.
 - `botified-core-linux-aarch64-gnu.tar.gz` for ARM64 Linux devices.
 
 Core does not support macOS. On Darwin or any other unsupported platform, the
@@ -269,7 +269,7 @@ If your Botified service has no service key configured, leave the
 
 Each release publishes:
 
-- `botified-core-linux-x86_64-gnu.tar.gz`
+- `botified-core-linux-x86_64-musl.tar.gz`
 - `botified-core-linux-aarch64-gnu.tar.gz`
 - `botified-claw-gateway-companion.tar.gz`
 - `botified-playground.tar.gz`

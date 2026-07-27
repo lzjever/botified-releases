@@ -55,7 +55,7 @@ write_checksums() {
 	for asset in \
 		botified-claw-gateway-companion.tar.gz \
 		botified-core-linux-aarch64-gnu.tar.gz \
-		botified-core-linux-x86_64-gnu.tar.gz \
+		botified-core-linux-x86_64-musl.tar.gz \
 		botified-playground.tar.gz
 	do
 		printf '%s  %s\n' "$(digest_file "$dir/$asset")" "$asset" >> "$dir/SHA256SUMS"
@@ -93,8 +93,8 @@ make_generated_fixtures() {
 	chmod 0755 "$stage/playground/bin/botified-playground"
 	printf 'fixture playground skill\n' > "$stage/playground/share/botified/skills/robot-playground/SKILL.md"
 
-	$host_tar -C "$stage/core" -czf "$dir/botified-core-linux-x86_64-gnu.tar.gz" .
-	cp "$dir/botified-core-linux-x86_64-gnu.tar.gz" "$dir/botified-core-linux-aarch64-gnu.tar.gz"
+	$host_tar -C "$stage/core" -czf "$dir/botified-core-linux-x86_64-musl.tar.gz" .
+	cp "$dir/botified-core-linux-x86_64-musl.tar.gz" "$dir/botified-core-linux-aarch64-gnu.tar.gz"
 	$host_tar -C "$stage/gateway" -czf "$dir/botified-claw-gateway-companion.tar.gz" .
 	$host_tar -C "$stage/playground" -czf "$dir/botified-playground.tar.gz" .
 	write_checksums "$dir"
@@ -112,7 +112,7 @@ else
 fi
 
 for required in \
-	botified-core-linux-x86_64-gnu.tar.gz \
+	botified-core-linux-x86_64-musl.tar.gz \
 	botified-core-linux-aarch64-gnu.tar.gz \
 	botified-claw-gateway-companion.tar.gz \
 	botified-playground.tar.gz \
@@ -269,7 +269,7 @@ expected_asset() {
 		install-playground.sh) printf '%s\n' botified-playground.tar.gz ;;
 		install.sh)
 			case "$os:$arch" in
-				Linux:x86_64) printf '%s\n' botified-core-linux-x86_64-gnu.tar.gz ;;
+				Linux:x86_64) printf '%s\n' botified-core-linux-x86_64-musl.tar.gz ;;
 				Linux:aarch64) printf '%s\n' botified-core-linux-aarch64-gnu.tar.gz ;;
 				*) die "unexpected test platform $os:$arch" ;;
 			esac
@@ -512,11 +512,11 @@ run_case "checksum tools are mandatory" install-gateway.sh Linux x86_64 curl non
 HTTP_404_ASSET=botified-playground.tar.gz
 run_case "asset download 404 fails" install-playground.sh Linux x86_64 wget sha256sum "$fixture_dir" failure ""
 
-asset=botified-core-linux-x86_64-gnu.tar.gz
+asset=botified-core-linux-x86_64-musl.tar.gz
 wrong_fixture=$(make_manifest_fixture wrong "$asset" wrong)
 run_case "wrong checksum fails" install.sh Linux x86_64 curl sha256sum "$wrong_fixture" failure "checksum mismatch"
 
-asset=botified-core-linux-x86_64-gnu.tar.gz
+asset=botified-core-linux-x86_64-musl.tar.gz
 uppercase_core_fixture=$(make_manifest_fixture uppercase-core "$asset" uppercase)
 run_case "core rejects uppercase checksum before hashing" install.sh Linux x86_64 curl sha256sum "$uppercase_core_fixture" failure "invalid checksum" not-called
 
@@ -536,7 +536,7 @@ asset=botified-playground.tar.gz
 missing_fixture=$(make_manifest_fixture missing "$asset" missing)
 run_case "missing target checksum fails" install-playground.sh Linux x86_64 curl shasum "$missing_fixture" failure "checksum for $asset must appear exactly once"
 
-asset=botified-core-linux-x86_64-gnu.tar.gz
+asset=botified-core-linux-x86_64-musl.tar.gz
 truncated_fixture=$(make_truncated_fixture "$asset")
 run_case "truncated archive fails checksum before extraction" install.sh Linux x86_64 wget sha256sum "$truncated_fixture" failure "checksum mismatch"
 

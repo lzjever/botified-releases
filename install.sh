@@ -108,7 +108,7 @@ arch=$(uname -m 2>/dev/null || true)
 
 case "$os:$arch" in
 	Linux:x86_64)
-		asset=botified-core-linux-x86_64-gnu.tar.gz
+		asset=botified-core-linux-x86_64-musl.tar.gz
 		;;
 	Linux:aarch64)
 		asset=botified-core-linux-aarch64-gnu.tar.gz
