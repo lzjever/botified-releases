@@ -5,6 +5,9 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 fixture_dir=${1:-${BOTIFIED_INSTALLER_FIXTURES:-}}
 version=v9.8.7
+asr_version=v1.2.3
+default_asr_version=v4.5.6
+asr_asset=botified-asr-skill.tar.gz
 generated_fixtures=false
 
 pass_count=0
@@ -25,6 +28,7 @@ host_command() {
 
 host_sh=$(host_command sh)
 host_tar=$(host_command tar)
+host_python=$(host_command python3)
 host_hash=
 host_hash_kind=
 if command -v sha256sum >/dev/null 2>&1; then
@@ -53,6 +57,7 @@ write_checksums() {
 	dir=$1
 	: > "$dir/SHA256SUMS"
 	for asset in \
+		botified-asr-skill.tar.gz \
 		botified-claw-gateway-companion.tar.gz \
 		botified-core-linux-aarch64-gnu.tar.gz \
 		botified-core-linux-x86_64-musl.tar.gz \
@@ -74,7 +79,10 @@ make_generated_fixtures() {
 		"$stage/gateway/share/doc/botified-claw-gateway" \
 		"$stage/gateway/share/botified-claw-gateway/examples" \
 		"$stage/playground/bin" \
-		"$stage/playground/share/botified/skills/robot-playground"
+		"$stage/playground/share/botified/skills/robot-playground" \
+		"$stage/asr-skill/botified-asr/agents" \
+		"$stage/asr-skill/botified-asr/references" \
+		"$stage/asr-skill/botified-asr/scripts"
 
 	for name in botified botified-tui; do
 		printf '#!/bin/sh\nexit 0\n' > "$stage/core/bin/$name"
@@ -93,10 +101,43 @@ make_generated_fixtures() {
 	chmod 0755 "$stage/playground/bin/botified-playground"
 	printf 'fixture playground skill\n' > "$stage/playground/share/botified/skills/robot-playground/SKILL.md"
 
+	printf 'fixture asr skill\n' > "$stage/asr-skill/botified-asr/SKILL.md"
+	printf 'fixture asr metadata\n' > "$stage/asr-skill/botified-asr/agents/openai.yaml"
+	printf 'fixture asr reference\n' > "$stage/asr-skill/botified-asr/references/api.md"
+	printf '#!/bin/sh\nexit 0\n' > "$stage/asr-skill/botified-asr/scripts/botified-asr"
+	chmod 0755 "$stage/asr-skill/botified-asr/scripts/botified-asr"
+
 	$host_tar -C "$stage/core" -czf "$dir/botified-core-linux-x86_64-musl.tar.gz" .
 	cp "$dir/botified-core-linux-x86_64-musl.tar.gz" "$dir/botified-core-linux-aarch64-gnu.tar.gz"
 	$host_tar -C "$stage/gateway" -czf "$dir/botified-claw-gateway-companion.tar.gz" .
 	$host_tar -C "$stage/playground" -czf "$dir/botified-playground.tar.gz" .
+	$host_python - "$stage/asr-skill" "$dir/$asr_asset" <<'PY'
+import sys
+import tarfile
+from pathlib import Path
+
+source = Path(sys.argv[1])
+members = (
+    ("botified-asr", 0o755),
+    ("botified-asr/SKILL.md", 0o644),
+    ("botified-asr/agents", 0o755),
+    ("botified-asr/agents/openai.yaml", 0o644),
+    ("botified-asr/references", 0o755),
+    ("botified-asr/references/api.md", 0o644),
+    ("botified-asr/scripts", 0o755),
+    ("botified-asr/scripts/botified-asr", 0o755),
+)
+with tarfile.open(sys.argv[2], "w:gz") as archive:
+    for name, mode in members:
+        archive.add(
+            source / name,
+            arcname=name,
+            recursive=False,
+            filter=lambda info, mode=mode: (
+                setattr(info, "mode", mode) or info
+            ),
+        )
+PY
 	write_checksums "$dir"
 }
 
@@ -112,6 +153,7 @@ else
 fi
 
 for required in \
+	botified-asr-skill.tar.gz \
 	botified-core-linux-x86_64-musl.tar.gz \
 	botified-core-linux-aarch64-gnu.tar.gz \
 	botified-claw-gateway-companion.tar.gz \
@@ -171,19 +213,29 @@ case "$tool" in
 	*) exit 92 ;;
 esac
 
-prefix="https://github.com/lzjever/botified-releases/releases/download/$SHIM_VERSION"
-case "$url" in
-	"$prefix"/*) asset=${url#"$prefix"/} ;;
-	*) printf 'unexpected download URL: %s\n' "$url" >&2; exit 93 ;;
-esac
-case "$asset" in
-	*/*|'') printf 'unexpected asset URL: %s\n' "$url" >&2; exit 94 ;;
-esac
 printf '%s %s\n' "$tool" "$url" >> "$SHIM_DOWNLOAD_LOG"
-if [ "${SHIM_HTTP_404_ASSET:-}" = "$asset" ]; then
-	exit 22
+if [ "$url" = "https://raw.githubusercontent.com/lzjever/botified-releases/main/botified-asr-latest" ]; then
+	case "${SHIM_POINTER_MODE:-valid}" in
+		valid) printf '%s\n' "$SHIM_DEFAULT_ASR_VERSION" > "$out" ;;
+		invalid-version) printf 'v1.02.3\n' > "$out" ;;
+		missing-newline) printf '%s' "$SHIM_DEFAULT_ASR_VERSION" > "$out" ;;
+		double-newline) printf '%s\n\n' "$SHIM_DEFAULT_ASR_VERSION" > "$out" ;;
+		*) exit 97 ;;
+	esac
+else
+	prefix="https://github.com/lzjever/botified-releases/releases/download/$SHIM_VERSION"
+	case "$url" in
+		"$prefix"/*) asset=${url#"$prefix"/} ;;
+		*) printf 'unexpected download URL: %s\n' "$url" >&2; exit 93 ;;
+	esac
+	case "$asset" in
+		*/*|'') printf 'unexpected asset URL: %s\n' "$url" >&2; exit 94 ;;
+	esac
+	if [ "${SHIM_HTTP_404_ASSET:-}" = "$asset" ]; then
+		exit 22
+	fi
+	cp "$SHIM_FIXTURE_DIR/$asset" "$out"
 fi
-cp "$SHIM_FIXTURE_DIR/$asset" "$out"
 EOF
 
 cat > "$shim_src/sha256sum" <<'EOF'
@@ -223,7 +275,7 @@ EOF
 
 cat > "$shim_src/python3" <<'EOF'
 #!/bin/sh
-exit 0
+exec "$SHIM_REAL_PYTHON" "$@"
 EOF
 
 chmod 0755 "$shim_src"/*
@@ -329,6 +381,7 @@ run_case() {
 	SHIM_CHECKSUM_LOG="$checksum_log" \
 	SHIM_REAL_HASH="$host_hash" \
 	SHIM_REAL_HASH_KIND="$host_hash_kind" \
+	SHIM_REAL_PYTHON="$host_python" \
 	SHIM_HTTP_404_ASSET="${HTTP_404_ASSET:-}" \
 	BOTIFIED_VERSION="$version" \
 	BOTIFIED_INSTALL_DIR="$prefix/bin" \
@@ -448,6 +501,7 @@ run_unsupported_core_case() {
 	SHIM_CHECKSUM_LOG="$checksum_log" \
 	SHIM_REAL_HASH="$host_hash" \
 	SHIM_REAL_HASH_KIND="$host_hash_kind" \
+	SHIM_REAL_PYTHON="$host_python" \
 	BOTIFIED_VERSION="$version" \
 	BOTIFIED_INSTALL_DIR="$prefix/bin" \
 	BOTIFIED_SHARE_DIR="$prefix/share/botified" \
@@ -500,6 +554,328 @@ make_invalid_tar_fixture() {
 	printf '%s\n' "$dir"
 }
 
+make_unsafe_asr_fixture() {
+	dir="$tmp_root/mutations/unsafe-asr"
+	stage="$dir/stage"
+	mkdir -p "$stage"
+	$host_tar -xzf "$fixture_dir/$asr_asset" -C "$stage"
+	rm "$stage/botified-asr/scripts/botified-asr"
+	ln -s ../SKILL.md "$stage/botified-asr/scripts/botified-asr"
+	$host_tar -C "$stage" -czf "$dir/$asr_asset" botified-asr
+	printf '%s  %s\n' "$(digest_file "$dir/$asr_asset")" "$asr_asset" > "$dir/SHA256SUMS"
+	printf '%s\n' "$dir"
+}
+
+asr_target_path() {
+	case "$1" in
+		codex) printf '%s\n' "$2/.codex/skills/botified-asr" ;;
+		openclaw) printf '%s\n' "$2/.agents/skills/botified-asr" ;;
+		botified) printf '%s\n' "$2/.local/share/botified/skills/botified-asr" ;;
+		*) die "unknown ASR target $1" ;;
+	esac
+}
+
+run_asr_case() {
+	case_name=$1
+	target_kind=$2
+	version_mode=$3
+	case_fixture=$4
+	expected_status=$5
+	expected_message=$6
+	existing=${7:-none}
+	config_mode=${8:-absent}
+	pointer_mode=${9:-valid}
+	expect_asset=${10:-yes}
+
+	case_root="$tmp_root/cases/$pass_count-$case_name"
+	case_bin="$case_root/bin"
+	home="$case_root/home"
+	xdg="$case_root/xdg"
+	case_tmp="$case_root/tmp"
+	output="$case_root/output"
+	download_log="$case_root/downloads"
+	checksum_log="$case_root/checksums"
+	mkdir -p "$home" "$xdg" "$case_tmp"
+	: > "$download_log"
+	: > "$checksum_log"
+	make_case_bin "$case_bin" curl sha256sum
+	target=$(asr_target_path "$target_kind" "$home")
+	target_parent=${target%/*}
+	versions_root="$target_parent/.botified-asr-versions"
+	old_link=
+
+	case "$existing" in
+		none) ;;
+		managed)
+			old_name=asr-v0.9.0-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-old
+			mkdir -p "$versions_root/$old_name/botified-asr"
+			printf 'old skill\n' > "$versions_root/$old_name/botified-asr/SKILL.md"
+			mkdir -p "$versions_root/unknown-sentinel"
+			printf 'keep unknown\n' > "$versions_root/unknown-sentinel/keep"
+			old_link=".botified-asr-versions/$old_name/botified-asr"
+			ln -s "$old_link" "$target"
+			;;
+		directory)
+			mkdir -p "$target"
+			printf 'keep directory\n' > "$target/sentinel"
+			;;
+		*) die "unknown ASR existing target mode $existing" ;;
+	esac
+
+	case "$config_mode" in
+		absent | half | invalid) ;;
+		pair)
+			mkdir -p "$xdg/botified-asr"
+			printf 'preserved service config\n' > "$xdg/botified-asr/service.env"
+			chmod 0640 "$xdg/botified-asr/service.env"
+			;;
+		rollback)
+			xdg="$target/agents/openai.yaml"
+			;;
+		preserve)
+			mkdir -p "$xdg/botified-asr"
+			chmod 0700 "$xdg/botified-asr"
+			printf 'preserved client config\n' > "$xdg/botified-asr/client.env"
+			printf 'preserved service config\n' > "$xdg/botified-asr/service.env"
+			chmod 0600 "$xdg/botified-asr/client.env" "$xdg/botified-asr/service.env"
+			;;
+		*) die "unknown ASR config mode $config_mode" ;;
+	esac
+
+	case "$version_mode" in
+		explicit)
+			selected_version=$asr_version
+			;;
+		default)
+			selected_version=$default_asr_version
+			;;
+		invalid)
+			selected_version=v1.02.3
+			;;
+		*) die "unknown ASR version mode $version_mode" ;;
+	esac
+	tag=asr-$selected_version
+
+	set +e
+	(
+		unset BOTIFIED_ASR_VERSION BOTIFIED_ASR_BASE_URL BOTIFIED_ASR_API_KEY
+		if [ "$version_mode" != default ]; then
+			BOTIFIED_ASR_VERSION=$selected_version
+			export BOTIFIED_ASR_VERSION
+		fi
+		if [ "$config_mode" = pair ] || [ "$config_mode" = rollback ]; then
+			BOTIFIED_ASR_BASE_URL=https://asr.example:8443/
+			BOTIFIED_ASR_API_KEY='fixture-token+/=='
+			export BOTIFIED_ASR_BASE_URL BOTIFIED_ASR_API_KEY
+		elif [ "$config_mode" = half ]; then
+			BOTIFIED_ASR_BASE_URL=https://asr.example
+			export BOTIFIED_ASR_BASE_URL
+		elif [ "$config_mode" = invalid ]; then
+			BOTIFIED_ASR_BASE_URL=https://asr.example/path
+			BOTIFIED_ASR_API_KEY='fixture-token+/=='
+			export BOTIFIED_ASR_BASE_URL BOTIFIED_ASR_API_KEY
+		fi
+		export \
+			HOME="$home" \
+			XDG_CONFIG_HOME="$xdg" \
+			TMPDIR="$case_tmp" \
+			PATH="$case_bin:$base_bin" \
+			SHIM_VERSION="$tag" \
+			SHIM_DEFAULT_ASR_VERSION="$default_asr_version" \
+			SHIM_POINTER_MODE="$pointer_mode" \
+			SHIM_FIXTURE_DIR="$case_fixture" \
+			SHIM_DOWNLOAD_LOG="$download_log" \
+			SHIM_CHECKSUM_LOG="$checksum_log" \
+			SHIM_REAL_HASH="$host_hash" \
+			SHIM_REAL_HASH_KIND="$host_hash_kind" \
+			SHIM_REAL_PYTHON="$host_python" \
+			BOTIFIED_VERSION=v99.99.99
+		"$host_sh" "$repo_root/install-asr-skill.sh" --target "$target_kind"
+	) > "$output" 2>&1
+	status=$?
+	set -e
+
+	if [ "$expected_status" = success ]; then
+		[ "$status" -eq 0 ] || {
+			printf 'not ok - %s: expected success, got %s\n' "$case_name" "$status" >&2
+			sed -n '1,200p' "$output" >&2
+			exit 1
+		}
+		assert_contains "$output" "Checksum verified." "$case_name"
+		[ -L "$target" ] || die "$case_name target is not an atomic discovery symlink"
+		installed_link=$(readlink "$target")
+		case "$installed_link" in
+			.botified-asr-versions/"$tag"-*/botified-asr) ;;
+			*) die "$case_name installed an unmanaged discovery symlink: $installed_link" ;;
+		esac
+		"$host_python" - "$target" <<'PY' || die "$case_name installed the wrong Skill shape"
+import os
+import stat
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+expected = {
+    ".": (stat.S_IFDIR, 0o755),
+    "SKILL.md": (stat.S_IFREG, 0o644),
+    "agents": (stat.S_IFDIR, 0o755),
+    "agents/openai.yaml": (stat.S_IFREG, 0o644),
+    "references": (stat.S_IFDIR, 0o755),
+    "references/api.md": (stat.S_IFREG, 0o644),
+    "scripts": (stat.S_IFDIR, 0o755),
+    "scripts/botified-asr": (stat.S_IFREG, 0o755),
+}
+actual = {"."}
+for directory, directories, files in os.walk(root):
+    relative = Path(directory).relative_to(root)
+    actual.update((relative / name).as_posix() for name in directories + files)
+assert actual == set(expected)
+for name, (kind, mode) in expected.items():
+    status = (root / name).stat()
+    assert stat.S_IFMT(status.st_mode) == kind
+    assert stat.S_IMODE(status.st_mode) == mode
+PY
+		if [ "$existing" = managed ]; then
+			[ ! -e "$versions_root/$old_name" ] ||
+				die "$case_name retained the old managed version"
+			[ -f "$versions_root/unknown-sentinel/keep" ] ||
+				die "$case_name removed an unknown versions-root entry"
+			[ "$(find "$versions_root" -mindepth 1 -maxdepth 1 | wc -l)" -eq 2 ] ||
+				die "$case_name did not clean only old managed versions"
+		else
+			[ "$(find "$versions_root" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ] ||
+				die "$case_name retained an unexpected managed version"
+		fi
+	else
+		[ "$status" -ne 0 ] || die "$case_name unexpectedly succeeded"
+		if [ -n "$expected_message" ]; then
+			assert_contains "$output" "$expected_message" "$case_name"
+		fi
+		case "$existing" in
+			managed)
+				[ -L "$target" ] || die "$case_name removed the old managed target"
+				[ "$(readlink "$target")" = "$old_link" ] ||
+					die "$case_name changed the old managed target"
+				[ -s "$target/SKILL.md" ] || die "$case_name removed the old Skill"
+				[ -f "$versions_root/unknown-sentinel/keep" ] ||
+					die "$case_name removed an unknown versions-root entry"
+				[ "$(find "$versions_root" -mindepth 1 -maxdepth 1 | wc -l)" -eq 2 ] ||
+					die "$case_name retained a failed new version"
+				;;
+			directory)
+				[ -f "$target/sentinel" ] || die "$case_name changed the ordinary target directory"
+				;;
+			none) [ ! -e "$target" ] || die "$case_name installed after failure" ;;
+		esac
+	fi
+
+	pointer_url=https://raw.githubusercontent.com/lzjever/botified-releases/main/botified-asr-latest
+	asset_url="https://github.com/lzjever/botified-releases/releases/download/$tag/$asr_asset"
+	if [ "$version_mode" = default ]; then
+		assert_contains "$download_log" "curl $pointer_url" "$case_name"
+	elif grep -F "$pointer_url" "$download_log" >/dev/null 2>&1; then
+		die "$case_name fetched the version pointer for an explicit version"
+	fi
+	if [ "$expect_asset" = yes ]; then
+		assert_contains "$download_log" "curl $asset_url" "$case_name"
+	elif grep -F "$asr_asset" "$download_log" >/dev/null 2>&1; then
+		die "$case_name downloaded the asset before validation completed"
+	fi
+	if grep -F '/releases/latest/download/' "$download_log" >/dev/null 2>&1; then
+		die "$case_name used the repository-wide latest release"
+	fi
+
+	case "$config_mode:$expected_status" in
+		preserve:success)
+			[ "$(cat "$xdg/botified-asr/client.env")" = "preserved client config" ] ||
+				die "$case_name changed client.env without explicit config"
+			[ "$(cat "$xdg/botified-asr/service.env")" = "preserved service config" ] ||
+				die "$case_name read or changed service.env"
+			;;
+		pair:success)
+			if ! "$host_python" - "$xdg/botified-asr/client.env" <<'PY'
+import stat
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+assert path.read_bytes() == (
+    b"BOTIFIED_ASR_BASE_URL=https://asr.example:8443/\n"
+    b"BOTIFIED_ASR_API_KEY=fixture-token+/==\n"
+)
+assert stat.S_IMODE(path.stat().st_mode) == 0o600
+assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
+service = path.parent / "service.env"
+assert service.read_bytes() == b"preserved service config\n"
+assert stat.S_IMODE(service.stat().st_mode) == 0o640
+PY
+			then
+				die "$case_name wrote invalid client.env"
+			fi
+			if grep -F 'fixture-token+/==' "$output" >/dev/null 2>&1; then
+				die "$case_name leaked the API key"
+			fi
+			;;
+		rollback:failure)
+			if grep -F 'fixture-token+/==' "$output" >/dev/null 2>&1; then
+				die "$case_name leaked the API key during rollback"
+			fi
+			;;
+		absent:success)
+			[ ! -e "$xdg/botified-asr/client.env" ] ||
+				die "$case_name created client.env without explicit config"
+			;;
+	esac
+
+	say_ok "$case_name"
+}
+
+run_asr_argument_case() {
+	case_name=$1
+	shift
+	case_root="$tmp_root/cases/$pass_count-$case_name"
+	case_bin="$case_root/bin"
+	home="$case_root/home"
+	xdg="$case_root/xdg"
+	case_tmp="$case_root/tmp"
+	output="$case_root/output"
+	download_log="$case_root/downloads"
+	checksum_log="$case_root/checksums"
+	mkdir -p "$home" "$xdg" "$case_tmp"
+	: > "$download_log"
+	: > "$checksum_log"
+	make_case_bin "$case_bin" curl sha256sum
+
+	set +e
+	PATH="$case_bin:$base_bin" \
+	HOME="$home" \
+	XDG_CONFIG_HOME="$xdg" \
+	TMPDIR="$case_tmp" \
+	SHIM_VERSION="asr-$asr_version" \
+	SHIM_DEFAULT_ASR_VERSION="$default_asr_version" \
+	SHIM_FIXTURE_DIR="$fixture_dir" \
+	SHIM_DOWNLOAD_LOG="$download_log" \
+	SHIM_CHECKSUM_LOG="$checksum_log" \
+	SHIM_REAL_HASH="$host_hash" \
+	SHIM_REAL_HASH_KIND="$host_hash_kind" \
+	SHIM_REAL_PYTHON="$host_python" \
+	BOTIFIED_ASR_VERSION="$asr_version" \
+	"$host_sh" "$repo_root/install-asr-skill.sh" "$@" > "$output" 2>&1
+	status=$?
+	set -e
+
+	[ "$status" -eq 64 ] || {
+		printf 'not ok - %s: expected status 64, got %s\n' "$case_name" "$status" >&2
+		sed -n '1,80p' "$output" >&2
+		exit 1
+	}
+	assert_contains "$output" \
+		"usage: install-asr-skill.sh --target codex|openclaw|botified" \
+		"$case_name"
+	[ ! -s "$download_log" ] || die "$case_name downloaded before rejecting arguments"
+	say_ok "$case_name"
+}
+
 run_case "core Linux x86_64 prefers sha256sum via curl" install.sh Linux x86_64 curl both "$fixture_dir" success ""
 run_case "core Linux aarch64 via wget and sha256sum" install.sh Linux aarch64 wget sha256sum "$fixture_dir" success ""
 run_case "core warns when gateway needs a separate upgrade" install.sh Linux x86_64 curl sha256sum "$fixture_dir" success "" auto true
@@ -543,5 +919,42 @@ run_case "truncated archive fails checksum before extraction" install.sh Linux x
 asset=botified-claw-gateway-companion.tar.gz
 invalid_tar_fixture=$(make_invalid_tar_fixture "$asset")
 run_case "checksum-correct invalid tar fails extraction" install-gateway.sh Linux x86_64 curl shasum "$invalid_tar_fixture" failure ""
+
+run_asr_argument_case "ASR skill requires target arguments"
+run_asr_argument_case "ASR skill rejects an unknown target" --target unknown
+run_asr_argument_case "ASR skill rejects extra arguments" --target codex extra
+
+run_asr_case "ASR skill installs Codex target and replaces an old managed version" \
+	codex explicit "$fixture_dir" success "" managed preserve
+run_asr_case "ASR skill installs OpenClaw target and private client config" \
+	openclaw explicit "$fixture_dir" success "" none pair
+run_asr_case "ASR skill installs Botified target" \
+	botified explicit "$fixture_dir" success ""
+run_asr_case "ASR skill resolves its default version pointer" \
+	codex default "$fixture_dir" success ""
+
+run_asr_case "ASR skill rejects a noncanonical explicit version before download" \
+	codex invalid "$fixture_dir" failure "invalid version" none absent valid no
+run_asr_case "ASR skill rejects a noncanonical pointer before asset download" \
+	codex default "$fixture_dir" failure "invalid version pointer" none absent invalid-version no
+run_asr_case "ASR skill requires the pointer final newline before asset download" \
+	codex default "$fixture_dir" failure "invalid version pointer" none absent missing-newline no
+run_asr_case "ASR skill rejects half configured client credentials before download" \
+	codex explicit "$fixture_dir" failure "must be provided together" none half valid no
+run_asr_case "ASR skill rejects invalid client origin before download" \
+	codex explicit "$fixture_dir" failure "invalid client configuration" none invalid valid no
+run_asr_case "ASR skill preserves an ordinary target directory before download" \
+	codex explicit "$fixture_dir" failure "target already exists" directory absent valid no
+
+asr_wrong_fixture=$(make_manifest_fixture wrong-asr "$asr_asset" wrong)
+run_asr_case "ASR skill wrong checksum preserves the old managed version" \
+	codex explicit "$asr_wrong_fixture" failure "checksum mismatch" managed
+
+unsafe_asr_fixture=$(make_unsafe_asr_fixture)
+run_asr_case "ASR skill unsafe tar preserves the old managed version" \
+	codex explicit "$unsafe_asr_fixture" failure "invalid Skill archive" managed
+
+run_asr_case "ASR skill config commit failure restores the old managed version" \
+	codex explicit "$fixture_dir" failure "invalid Skill archive" managed rollback
 
 printf '1..%d\n' "$pass_count"
