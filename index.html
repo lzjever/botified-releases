@@ -214,10 +214,14 @@
       </a>
     </section>
 
-    <section class="install" aria-label="Install command">
-      <p>安装 Botified core：</p>
-      <code>curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh | sh</code>
-      <p>安装器会下载匹配架构的 <code>botified-core-*.tar.gz</code>，安装 <code>botified</code> 和 <code>botified-tui</code>，并复制 bundle 文档和官方 skills。</p>
+    <section class="install" aria-label="Managed Core install commands">
+      <p>先下载并检查 Core 安装脚本：</p>
+      <code>curl -fsSLo /tmp/botified-install.sh https://raw.githubusercontent.com/lzjever/botified-releases/main/install.sh<br>less /tmp/botified-install.sh</code>
+      <p>当前非 root 用户的 systemd user service（需要管理员已确认 <code>Linger=yes</code>）：</p>
+      <code>sh /tmp/botified-install.sh --scope user</code>
+      <p>固定非 root <code>botified</code> 账号的 system service：</p>
+      <code>sudo sh /tmp/botified-install.sh --scope system</code>
+      <p>安装后会绑定 MainPID、health responder 和目标 binary 完成运行态验证。固定路径、files-only 边界和手工移除说明见 <a href="https://github.com/lzjever/botified-releases#install-core">完整安装文档</a>。</p>
       <p>按需安装 gateway：</p>
       <code>curl -fsSL https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh | sh</code>
       <p>按需安装 playground：</p>
