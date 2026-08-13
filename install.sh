@@ -378,6 +378,7 @@ replace_scoped_tree() {
 	rm -rf "$tree_new" "$tree_old"
 	mkdir -p "$tree_new"
 	cp -R "$tree_source/." "$tree_new/"
+	chmod -R a-x,u=rwX,go=rX "$tree_new"
 	if [ -e "$tree_target" ] || [ -L "$tree_target" ]; then
 		mv "$tree_target" "$tree_old"
 	fi
@@ -386,6 +387,8 @@ replace_scoped_tree() {
 }
 
 commit_scoped_release() {
+	mkdir -p "$scope_share_fs" "$scope_share_fs/skills" "$scope_share_fs/systemd"
+	chmod 0755 "$scope_share_fs" "$scope_share_fs/skills" "$scope_share_fs/systemd"
 	place_scoped_file "$bundle_dir/bin/botified" "$scope_binary_fs" 0755
 	place_scoped_file "$bundle_dir/bin/botified-tui" "$scope_tui_fs" 0755
 	unit_share_fs="$scope_share_fs/systemd"

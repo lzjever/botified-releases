@@ -143,6 +143,7 @@ EOF
 	printf 'fixture agent guide\n' > "$stage/core/share/botified/skills/botified-agent-guide/SKILL.md"
 	printf 'fixture skill creator\n' > "$stage/core/share/botified/skills/botified-skill-creator/SKILL.md"
 	printf 'fixture docs\n' > "$stage/core/share/doc/botified/README.md"
+	chmod 0755 "$stage/core/share/botified/skills/botified-agent-guide/SKILL.md"
 	cat > "$stage/core/share/botified/systemd/botified.user.service" <<'EOF'
 # Managed by the Botified installer. Inspect and operate with systemd tools.
 [Unit]
@@ -1220,11 +1221,13 @@ prepare_scoped_case() {
 	scoped_config_check_fail=false
 	scoped_test_contract=both
 	scoped_path_override=none
+	scoped_umask=0022
 }
 
 invoke_scoped() {
 	set +e
 	(
+		umask "$scoped_umask"
 		unset BOTIFIED_INSTALL_DIR BOTIFIED_SHARE_DIR BOTIFIED_DOC_DIR BOTIFIED_PREFIX
 		unset BOTIFIED_INSTALL_TEST_MODE BOTIFIED_INSTALL_TEST_ROOT
 		case "$scoped_test_contract" in
@@ -1612,6 +1615,8 @@ run_user_repeat_success_case() {
 	printf 'preserved env\n' > "$scoped_env_fs"
 	printf 'preserved state\n' > "$scoped_workspace_fs/.botified/state/data"
 	printf 'preserved sibling\n' > "$scoped_skills_fs/unknown-sibling/data"
+	chmod 0700 "$scoped_skills_fs/unknown-sibling"
+	chmod 0600 "$scoped_skills_fs/unknown-sibling/data"
 	printf 'old owned leaf\n' > "$scoped_skills_fs/botified-agent-guide/old"
 	printf 'old docs\n' > "$scoped_docs_fs/old"
 
@@ -1632,8 +1637,12 @@ run_user_repeat_success_case() {
 	[ "$(cat "$scoped_env_fs")" = 'preserved env' ] || die "$case_name changed env"
 	[ "$(cat "$scoped_workspace_fs/.botified/state/data")" = 'preserved state' ] || die "$case_name changed runtime data"
 	[ "$(cat "$scoped_skills_fs/unknown-sibling/data")" = 'preserved sibling' ] || die "$case_name removed an unknown skill sibling"
+	assert_mode "$case_name unknown skill sibling" "$scoped_skills_fs/unknown-sibling" 700
+	assert_mode "$case_name unknown skill sibling" "$scoped_skills_fs/unknown-sibling/data" 600
 	[ ! -e "$scoped_skills_fs/botified-agent-guide/old" ] || die "$case_name did not replace the owned skill leaf"
 	[ ! -e "$scoped_docs_fs/old" ] || die "$case_name did not replace Core docs"
+	assert_mode "$case_name owned skill leaf" "$scoped_skills_fs/botified-agent-guide" 755
+	assert_mode "$case_name owned skill leaf" "$scoped_skills_fs/botified-agent-guide/SKILL.md" 644
 	assert_mode "$case_name" "$scoped_binary_fs" 755
 	assert_mode "$case_name" "$scoped_unit_fs" 644
 	assert_mode "$case_name" "$scoped_config_fs" 600
@@ -1658,6 +1667,7 @@ run_user_repeat_success_case() {
 run_system_first_install_success_case() {
 	case_name="system scope validates capabilities creates account late and proves exact runtime"
 	prepare_scoped_case system-first system
+	scoped_umask=0077
 	scoped_system_account=absent
 	scoped_proc_uid=$scoped_botified_uid
 	scoped_proc_gid=$scoped_botified_gid
@@ -1695,6 +1705,19 @@ run_system_first_install_success_case() {
 	assert_mode "$case_name" "$scoped_env_fs" 640
 	assert_mode "$case_name" "$scoped_workspace_fs" 750
 	assert_mode "$case_name" "$scoped_test_root/var/lib/botified" 750
+	for managed_parent in \
+		"$scoped_test_root/usr/local/share/botified" \
+		"$scoped_skills_fs" \
+		"$scoped_test_root/usr/local/share/botified/systemd"
+	do
+		assert_mode "$case_name managed parent" "$managed_parent" 755
+	done
+	for skill_name in botified-agent-guide botified-skill-creator; do
+		assert_mode "$case_name managed skill leaf" "$scoped_skills_fs/$skill_name" 755
+		assert_mode "$case_name managed skill file" "$scoped_skills_fs/$skill_name/SKILL.md" 644
+	done
+	assert_mode "$case_name managed docs leaf" "$scoped_docs_fs" 755
+	assert_mode "$case_name managed docs file" "$scoped_docs_fs/README.md" 644
 	assert_contains "$scoped_action_log" "chown root:botified ${scoped_config_fs%/*} $scoped_env_fs" "$case_name"
 	assert_contains "$scoped_action_log" "chown botified:botified $scoped_test_root/var/lib/botified" "$case_name"
 	assert_contains "$scoped_action_log" "chown botified:botified $scoped_workspace_fs" "$case_name"
