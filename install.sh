@@ -391,8 +391,14 @@ commit_scoped_release() {
 	chmod 0755 "$scope_share_fs" "$scope_share_fs/skills" "$scope_share_fs/systemd"
 	if [ "$managed_scope" = system ]; then
 		scope_docs_parent_fs=${scope_docs_fs%/*}
-		mkdir -p "$scope_docs_parent_fs"
-		chmod 0755 "$scope_docs_parent_fs"
+		if [ -e "$scope_docs_parent_fs" ] || [ -L "$scope_docs_parent_fs" ]; then
+			[ -d "$scope_docs_parent_fs" ] ||
+				fail "managed docs parent is not a directory: $scope_docs_parent_fs"
+			chmod a+X "$scope_docs_parent_fs"
+		else
+			mkdir -p "$scope_docs_parent_fs"
+			chmod 0755 "$scope_docs_parent_fs"
+		fi
 	fi
 	place_scoped_file "$bundle_dir/bin/botified" "$scope_binary_fs" 0755
 	place_scoped_file "$bundle_dir/bin/botified-tui" "$scope_tui_fs" 0755
