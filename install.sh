@@ -389,6 +389,11 @@ replace_scoped_tree() {
 commit_scoped_release() {
 	mkdir -p "$scope_share_fs" "$scope_share_fs/skills" "$scope_share_fs/systemd"
 	chmod 0755 "$scope_share_fs" "$scope_share_fs/skills" "$scope_share_fs/systemd"
+	if [ "$managed_scope" = system ]; then
+		scope_docs_parent_fs=${scope_docs_fs%/*}
+		mkdir -p "$scope_docs_parent_fs"
+		chmod 0755 "$scope_docs_parent_fs"
+	fi
 	place_scoped_file "$bundle_dir/bin/botified" "$scope_binary_fs" 0755
 	place_scoped_file "$bundle_dir/bin/botified-tui" "$scope_tui_fs" 0755
 	unit_share_fs="$scope_share_fs/systemd"
