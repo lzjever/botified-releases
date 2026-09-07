@@ -2811,6 +2811,238 @@ run_asset_dir_missing_file_case() {
 	say_ok "$case_name"
 }
 
+make_offline_bundle() {
+	offline_variant=${1:-intact}
+	case "$offline_variant" in
+		intact|tampered|missing-member) ;;
+		*) die "unknown offline bundle variant $offline_variant" ;;
+	esac
+	offline_dir="$tmp_root/offline-bundles/$offline_variant"
+	rm -rf "$offline_dir"
+	mkdir -p "$offline_dir"
+	for offline_installer in install-offline.sh install.sh install-gateway.sh; do
+		cp "$repo_root/$offline_installer" "$offline_dir/$offline_installer"
+	done
+	cp "$fixture_dir/botified-core-linux-x86_64-musl.tar.gz" \
+		"$offline_dir/botified-core-linux-x86_64-musl.tar.gz"
+	cp "$fixture_dir/botified-claw-gateway-companion.tar.gz" \
+		"$offline_dir/botified-claw-gateway-companion.tar.gz"
+	printf '%s\n' 0123456789abcdef0123456789abcdef01234567 > "$offline_dir/INSTALLER-SOURCE"
+	: > "$offline_dir/SHA256SUMS"
+	for offline_member in \
+		install-offline.sh \
+		install.sh \
+		install-gateway.sh \
+		botified-core-linux-x86_64-musl.tar.gz \
+		botified-claw-gateway-companion.tar.gz
+	do
+		printf '%s  %s\n' "$(digest_file "$offline_dir/$offline_member")" "$offline_member" \
+			>> "$offline_dir/SHA256SUMS"
+	done
+	case "$offline_variant" in
+		tampered)
+			printf 'tampered' >> "$offline_dir/botified-core-linux-x86_64-musl.tar.gz"
+			;;
+		missing-member)
+			rm -f "$offline_dir/INSTALLER-SOURCE"
+			;;
+	esac
+	printf '%s\n' "$offline_dir"
+}
+
+prepare_offline_case() {
+	prepare_scoped_case "offline-$1" user
+	scoped_script=install-offline.sh
+	offline_wrapper_fs="$scoped_test_root$scoped_home/.local/bin/botified-claw-gateway"
+	offline_gateway_unit_fs="$scoped_test_root$scoped_home/.config/systemd/user/botified-claw-gateway-weixin.service"
+	offline_gateway_config_fs="$scoped_test_root$scoped_home/.config/botified/gateway/weixin-gateway.yaml"
+}
+
+run_offline_bundle_integrity_case() {
+	case_name="offline bundle integrity gate rejects tampered and incomplete bundles"
+	tampered_bundle=$(make_offline_bundle tampered)
+	prepare_offline_case tampered
+	invoke_scoped --core-only --bundle-dir "$tampered_bundle"
+	[ "$scoped_status" -eq 1 ] ||
+		die "$case_name did not exit 1 for a tampered member (got $scoped_status)"
+	assert_contains "$scoped_output" \
+		'checksum mismatch for botified-core-linux-x86_64-musl.tar.gz' "$case_name tampered"
+	assert_no_scoped_side_effects "$case_name tampered"
+	assert_scoped_paths_absent "$case_name tampered" \
+		"$scoped_binary_fs" "$scoped_config_fs" "$scoped_env_fs" "$scoped_unit_fs"
+	[ ! -e "$scoped_home/.local/bin/botified" ] ||
+		die "$case_name tampered wrote outside the test root"
+
+	missing_bundle=$(make_offline_bundle missing-member)
+	prepare_offline_case missing-member
+	invoke_scoped --scope user --bundle-dir "$missing_bundle"
+	[ "$scoped_status" -eq 1 ] ||
+		die "$case_name did not exit 1 for a missing member (got $scoped_status)"
+	assert_contains "$scoped_output" 'offline bundle is missing INSTALLER-SOURCE' \
+		"$case_name missing member"
+	assert_no_scoped_side_effects "$case_name missing member"
+	assert_scoped_paths_absent "$case_name missing member" \
+		"$scoped_binary_fs" "$scoped_config_fs" "$scoped_env_fs" "$scoped_unit_fs"
+	say_ok "$case_name"
+}
+
+run_offline_core_only_case() {
+	case_name="offline core only matches files only semantics"
+	offline_core_bundle=$(make_offline_bundle intact)
+	prepare_offline_case core-only
+	offline_files_prefix="$scoped_root/files-only"
+	set +e
+	(
+		unset BOTIFIED_INSTALL_TEST_MODE BOTIFIED_INSTALL_TEST_ROOT BOTIFIED_ASSET_DIR
+		export \
+			PATH="$scoped_bin:$base_bin" \
+			HOME="$scoped_home" \
+			SHIM_OS=Linux \
+			SHIM_ARCH=x86_64 \
+			SHIM_ACTION_LOG="$scoped_action_log" \
+			SHIM_DOWNLOAD_LOG="$scoped_download_log" \
+			SHIM_CHECKSUM_LOG="$scoped_checksum_log" \
+			SHIM_REAL_HASH="$host_hash" \
+			SHIM_REAL_HASH_KIND="$host_hash_kind" \
+			BOTIFIED_VERSION="$version" \
+			BOTIFIED_INSTALL_DIR="$offline_files_prefix/bin" \
+			BOTIFIED_SHARE_DIR="$offline_files_prefix/share/botified" \
+			BOTIFIED_DOC_DIR="$offline_files_prefix/share/doc/botified"
+		"$host_sh" "$repo_root/install-offline.sh" --core-only --bundle-dir "$offline_core_bundle"
+	) > "$scoped_output" 2>&1
+	offline_core_status=$?
+	set -e
+	[ "$offline_core_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" "Checksum verified." "$case_name"
+	[ -x "$offline_files_prefix/bin/botified" ] || die "$case_name did not install botified"
+	[ -x "$offline_files_prefix/bin/botified-tui" ] || die "$case_name did not install botified-tui"
+	[ -d "$offline_files_prefix/share/botified/skills" ] || die "$case_name did not install skills"
+	[ -d "$offline_files_prefix/share/doc/botified" ] || die "$case_name did not install docs"
+	[ ! -s "$scoped_download_log" ] || die "$case_name contacted the network"
+	[ ! -s "$scoped_action_log" ] || die "$case_name invoked systemd or Core commands"
+	[ ! -e "$scoped_binary_fs" ] || die "$case_name touched managed canonical paths"
+	say_ok "$case_name"
+}
+
+run_offline_scope_case() {
+	case_name="offline scope matches managed semantics"
+	offline_scope_bundle=$(make_offline_bundle intact)
+	prepare_offline_case scope
+	invoke_scoped --scope user --bundle-dir "$offline_scope_bundle"
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" "Checksum verified." "$case_name"
+	[ -x "$scoped_binary_fs" ] || die "$case_name did not install the managed binary"
+	grep -F 'fixture core release v9.8.7' "$scoped_binary_fs" >/dev/null ||
+		die "$case_name did not place the bundled core release"
+	assert_scoped_lifecycle "$case_name" user
+	assert_contains "$scoped_output" 'Installed managed user service: botified.service' "$case_name"
+	[ ! -s "$scoped_download_log" ] || die "$case_name contacted the network"
+	say_ok "$case_name"
+}
+
+run_offline_gateway_requires_scope_case() {
+	case_name="offline gateway requires scope"
+	offline_usage_bundle=$(make_offline_bundle intact)
+	for arguments in '--gateway' '--gateway --channel weixin' '--channel weixin' '--core-only --gateway'; do
+		prepare_offline_case "usage-$(printf '%s' "$arguments" | tr ' ' '-')"
+		: > "$scoped_download_log"
+		: > "$scoped_action_log"
+		# Deliberately split the fixed test inputs into argv.
+		# shellcheck disable=SC2086
+		invoke_scoped $arguments --bundle-dir "$offline_usage_bundle"
+		[ "$scoped_status" -eq 2 ] ||
+			die "$case_name did not exit 2 for: $arguments (got $scoped_status)"
+		assert_contains "$scoped_output" 'usage: install-offline.sh' "$case_name ($arguments)"
+		assert_no_scoped_side_effects "$case_name ($arguments)"
+	done
+	say_ok "$case_name"
+}
+
+run_offline_gateway_order_case() {
+	case_name="offline scope gateway installs core first"
+	offline_gateway_bundle=$(make_offline_bundle intact)
+	prepare_offline_case gateway-order
+	invoke_scoped --scope user --gateway --channel weixin --bundle-dir "$offline_gateway_bundle"
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,240p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" "Checksum verified." "$case_name"
+	core_reload_line=$(grep -n -F -x 'systemctl user daemon-reload' "$scoped_action_log" | cut -d: -f1 | sed -n '1p')
+	core_enable_line=$(grep -n -F -x 'systemctl user enable botified.service' "$scoped_action_log" | cut -d: -f1)
+	core_restart_line=$(grep -n -F -x 'systemctl user restart botified.service' "$scoped_action_log" | cut -d: -f1)
+	gateway_reload_line=$(grep -n -F -x 'systemctl user daemon-reload' "$scoped_action_log" | cut -d: -f1 | sed -n '$p')
+	[ -n "$core_enable_line" ] && [ -n "$core_restart_line" ] &&
+		[ -n "$gateway_reload_line" ] && [ "$core_reload_line" != "$gateway_reload_line" ] ||
+		die "$case_name did not run both bundled installers"
+	[ "$core_reload_line" -lt "$core_enable_line" ] &&
+		[ "$core_enable_line" -lt "$core_restart_line" ] &&
+		[ "$core_restart_line" -lt "$gateway_reload_line" ] ||
+		die "$case_name did not install Core before the gateway"
+	[ -x "$scoped_binary_fs" ] || die "$case_name did not install Core"
+	[ -x "$offline_wrapper_fs" ] || die "$case_name did not install the gateway wrapper"
+	[ -f "$offline_gateway_unit_fs" ] || die "$case_name did not render the gateway unit"
+	[ -f "$offline_gateway_config_fs" ] || die "$case_name did not place the channel skeleton"
+	if grep -Eq '^systemctl user (enable|start|restart) botified-claw-gateway' "$scoped_action_log"; then
+		die "$case_name activated a gateway channel on first install"
+	fi
+	assert_contains "$scoped_output" \
+		'systemctl --user enable --now botified-claw-gateway-weixin.service' "$case_name"
+	[ ! -s "$scoped_download_log" ] || die "$case_name contacted the network"
+	say_ok "$case_name"
+}
+
+run_offline_interactive_case() {
+	case_name="offline interactive fallback reads tty"
+	offline_interactive_bundle=$(make_offline_bundle intact)
+	prepare_offline_case interactive
+	start_gateway_tty_feeder bogus managed-gateway bogus user weixin
+	invoke_scoped --bundle-dir "$offline_interactive_bundle"
+	stop_gateway_tty_feeder
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,240p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" \
+		'Offline install form (core-only|managed|managed-gateway): ' "$case_name form"
+	assert_contains "$scoped_output" 'Offline managed scope (user|system): ' "$case_name scope"
+	assert_contains "$scoped_output" \
+		'Gateway channels, comma separated (weixin|feishu|matrix; empty for weixin): ' \
+		"$case_name channels"
+	assert_contains "$scoped_output" "Checksum verified." "$case_name"
+	[ -x "$scoped_binary_fs" ] || die "$case_name did not install Core interactively"
+	[ -f "$offline_gateway_unit_fs" ] || die "$case_name did not install the gateway interactively"
+	[ ! -s "$scoped_download_log" ] || die "$case_name contacted the network"
+
+	prepare_offline_case interactive-eof
+	scoped_test_tty=/dev/null
+	invoke_scoped --bundle-dir "$offline_interactive_bundle"
+	[ "$scoped_status" -eq 5 ] ||
+		die "$case_name did not exit 5 after repeated EOF (got $scoped_status)"
+	assert_contains "$scoped_output" 'no valid answer after 3 attempts' "$case_name eof"
+	assert_no_scoped_side_effects "$case_name eof"
+
+	prepare_offline_case interactive-no-tty
+	scoped_test_tty="$scoped_root/absent-tty"
+	invoke_scoped --bundle-dir "$offline_interactive_bundle"
+	[ "$scoped_status" -eq 5 ] ||
+		die "$case_name did not exit 5 without a tty (got $scoped_status)"
+	assert_contains "$scoped_output" "interactive input requires $scoped_root/absent-tty" \
+		"$case_name no tty"
+	assert_no_scoped_side_effects "$case_name no tty"
+	say_ok "$case_name"
+}
+
 run_case "core Linux x86_64 prefers sha256sum via curl" install.sh Linux x86_64 curl both "$fixture_dir" success ""
 run_case "core Linux aarch64 via wget and sha256sum" install.sh Linux aarch64 wget sha256sum "$fixture_dir" success ""
 run_case "core warns when gateway needs a separate upgrade" install.sh Linux x86_64 curl sha256sum "$fixture_dir" success "" auto true
@@ -2899,5 +3131,12 @@ run_gateway_missing_manifest_case
 
 run_asset_dir_local_mode_case
 run_asset_dir_missing_file_case
+
+run_offline_bundle_integrity_case
+run_offline_core_only_case
+run_offline_scope_case
+run_offline_gateway_requires_scope_case
+run_offline_gateway_order_case
+run_offline_interactive_case
 
 printf '1..%d\n' "$pass_count"
