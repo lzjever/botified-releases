@@ -63,8 +63,7 @@ write_checksums() {
 		botified-asr-skill.tar.gz \
 		botified-claw-gateway-companion.tar.gz \
 		botified-core-linux-aarch64-gnu.tar.gz \
-		botified-core-linux-x86_64-musl.tar.gz \
-		botified-playground.tar.gz
+		botified-core-linux-x86_64-musl.tar.gz
 	do
 		printf '%s  %s\n' "$(digest_file "$dir/$asset")" "$asset" >> "$dir/SHA256SUMS"
 	done
@@ -83,8 +82,6 @@ make_generated_fixtures() {
 		"$stage/gateway/share/botified/gateway/dist/src" \
 		"$stage/gateway/share/doc/botified-claw-gateway" \
 		"$stage/gateway/share/botified-claw-gateway/examples" \
-		"$stage/playground/bin" \
-		"$stage/playground/share/botified/skills/robot-playground" \
 		"$stage/asr-skill/botified-asr/agents" \
 		"$stage/asr-skill/botified-asr/references" \
 		"$stage/asr-skill/botified-asr/scripts"
@@ -161,10 +158,6 @@ EOF
 	printf 'fixture gateway docs\n' > "$stage/gateway/share/doc/botified-claw-gateway/README.md"
 	printf 'fixture gateway example\n' > "$stage/gateway/share/botified-claw-gateway/examples/botified-claw-gateway.yaml"
 
-	printf '#!/bin/sh\n[ "${1:-}" = self-check ]\n' > "$stage/playground/bin/botified-playground"
-	chmod 0755 "$stage/playground/bin/botified-playground"
-	printf 'fixture playground skill\n' > "$stage/playground/share/botified/skills/robot-playground/SKILL.md"
-
 	printf 'fixture asr skill\n' > "$stage/asr-skill/botified-asr/SKILL.md"
 	printf 'fixture asr metadata\n' > "$stage/asr-skill/botified-asr/agents/openai.yaml"
 	printf 'fixture asr reference\n' > "$stage/asr-skill/botified-asr/references/api.md"
@@ -174,7 +167,6 @@ EOF
 	$host_tar -C "$stage/core" -czf "$dir/botified-core-linux-x86_64-musl.tar.gz" .
 	cp "$dir/botified-core-linux-x86_64-musl.tar.gz" "$dir/botified-core-linux-aarch64-gnu.tar.gz"
 	$host_tar -C "$stage/gateway" -czf "$dir/botified-claw-gateway-companion.tar.gz" .
-	$host_tar -C "$stage/playground" -czf "$dir/botified-playground.tar.gz" .
 	$host_python - "$stage/asr-skill" "$dir/$asr_asset" <<'PY'
 import sys
 import tarfile
@@ -221,7 +213,6 @@ for required in \
 	botified-core-linux-x86_64-musl.tar.gz \
 	botified-core-linux-aarch64-gnu.tar.gz \
 	botified-claw-gateway-companion.tar.gz \
-	botified-playground.tar.gz \
 	SHA256SUMS
 do
 	[ -f "$fixture_dir/$required" ] || die "fixture is missing $required"
@@ -549,7 +540,6 @@ expected_asset() {
 	arch=$3
 	case "$script" in
 		install-gateway.sh) printf '%s\n' botified-claw-gateway-companion.tar.gz ;;
-		install-playground.sh) printf '%s\n' botified-playground.tar.gz ;;
 		install.sh)
 			case "$os:$arch" in
 				Linux:x86_64) printf '%s\n' botified-core-linux-x86_64-musl.tar.gz ;;
@@ -664,7 +654,6 @@ run_case() {
 				[ ! -e "$prefix/share/botified-claw-gateway/examples/removed-example-file" ] ||
 					die "$case_name retained stale examples"
 				;;
-			install-playground.sh) [ -x "$prefix/bin/botified-playground" ] || die "$case_name did not install playground" ;;
 		esac
 	else
 		[ "$status" -ne 0 ] || {
@@ -676,7 +665,6 @@ run_case() {
 		case "$script" in
 			install.sh) [ ! -e "$prefix/bin/botified" ] || die "$case_name installed before validation completed" ;;
 			install-gateway.sh) [ ! -e "$prefix/bin/botified-claw-gateway" ] || die "$case_name installed before validation completed" ;;
-			install-playground.sh) [ ! -e "$prefix/bin/botified-playground" ] || die "$case_name installed before validation completed" ;;
 		esac
 	fi
 
@@ -761,7 +749,6 @@ make_manifest_fixture() {
 		wrong) printf '%064d  %s\n' 0 "$asset" > "$dir/SHA256SUMS" ;;
 		uppercase) printf 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA  %s\n' "$asset" > "$dir/SHA256SUMS" ;;
 		duplicate) printf '%s  %s\n%s  %s\n' "$digest" "$asset" "$digest" "$asset" > "$dir/SHA256SUMS" ;;
-		missing) printf '%064d  botified-playgroundXtarYgz\n' 0 > "$dir/SHA256SUMS" ;;
 		*) die "unknown manifest fixture mode $mode" ;;
 	esac
 	printf '%s\n' "$dir"
@@ -793,8 +780,7 @@ make_invalid_scope_bundle_fixture() {
 	for asset in \
 		botified-asr-skill.tar.gz \
 		botified-claw-gateway-companion.tar.gz \
-		botified-core-linux-aarch64-gnu.tar.gz \
-		botified-playground.tar.gz
+		botified-core-linux-aarch64-gnu.tar.gz
 	do
 		cp "$fixture_dir/$asset" "$dir/$asset"
 	done
@@ -1772,11 +1758,8 @@ run_case "core warns when gateway needs a separate upgrade" install.sh Linux x86
 run_unsupported_core_case "core rejects Darwin x86_64 before download" Darwin x86_64
 run_unsupported_core_case "core rejects Darwin arm64 before download" Darwin arm64
 run_case "gateway normal install" install-gateway.sh Linux x86_64 curl sha256sum "$fixture_dir" success ""
-run_case "playground normal install" install-playground.sh Linux x86_64 wget shasum "$fixture_dir" success ""
 
 run_case "checksum tools are mandatory" install-gateway.sh Linux x86_64 curl none "$fixture_dir" failure "sha256sum or shasum is required"
-HTTP_404_ASSET=botified-playground.tar.gz
-run_case "asset download 404 fails" install-playground.sh Linux x86_64 wget sha256sum "$fixture_dir" failure ""
 
 asset=botified-core-linux-x86_64-musl.tar.gz
 wrong_fixture=$(make_manifest_fixture wrong "$asset" wrong)
@@ -1790,17 +1773,9 @@ asset=botified-claw-gateway-companion.tar.gz
 uppercase_gateway_fixture=$(make_manifest_fixture uppercase-gateway "$asset" uppercase)
 run_case "gateway rejects uppercase checksum before hashing" install-gateway.sh Linux x86_64 curl shasum "$uppercase_gateway_fixture" failure "invalid checksum" not-called
 
-asset=botified-playground.tar.gz
-uppercase_playground_fixture=$(make_manifest_fixture uppercase-playground "$asset" uppercase)
-run_case "playground rejects uppercase checksum before hashing" install-playground.sh Linux x86_64 wget sha256sum "$uppercase_playground_fixture" failure "invalid checksum" not-called
-
 asset=botified-claw-gateway-companion.tar.gz
 duplicate_fixture=$(make_manifest_fixture duplicate "$asset" duplicate)
 run_case "duplicate target checksum fails" install-gateway.sh Linux x86_64 wget sha256sum "$duplicate_fixture" failure "checksum for $asset must appear exactly once"
-
-asset=botified-playground.tar.gz
-missing_fixture=$(make_manifest_fixture missing "$asset" missing)
-run_case "missing target checksum fails" install-playground.sh Linux x86_64 curl shasum "$missing_fixture" failure "checksum for $asset must appear exactly once"
 
 asset=botified-core-linux-x86_64-musl.tar.gz
 truncated_fixture=$(make_truncated_fixture "$asset")

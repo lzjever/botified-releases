@@ -8,10 +8,8 @@ Public installable releases for Botified.
 | --- | --- | --- |
 | Run Botified service and terminal UI | Core | `botified`, `botified-tui`, core docs, official built-in skills |
 | Connect Weixin, Feishu/Lark, or Matrix direct messages | Gateway | `botified-claw-gateway`; requires an already running Botified service and Node `>=22.19 <23` |
-| Try robot-side workflows locally | Playground | `botified-playground` virtual office robot modules and its bundled skill; requires Python `>=3.10` |
 
-Install only what you need. The core installer does not install gateway or
-playground.
+Install only what you need. The core installer does not install gateway.
 
 ## Install Core
 
@@ -248,43 +246,14 @@ botified-claw-gateway self-check
 The two version commands must report `${VERSION#v}`. The Core installer does
 not upgrade an existing Gateway; it prints a warning when it detects one.
 
-## Install Playground
-
-```sh
-installer=$(mktemp)
-trap 'rm -f "$installer"' EXIT
-curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
-  -o "$installer" \
-  https://raw.githubusercontent.com/lzjever/botified-releases/main/install-playground.sh
-sh "$installer"
-```
-
-Start the local virtual office robot stack:
-
-```sh
-botified-playground launch --agent off --bus-port 18765
-```
-
-Open the UI:
-
-```text
-http://127.0.0.1:18765/ui/
-```
-
-Trigger a scenario from another shell:
-
-```sh
-botified-playground scenario visitor_delivery --bus http://127.0.0.1:18765 --once
-```
-
 ## Install A Specific Version
 
-The three installers share the same version pin:
+The two installers share the same version pin:
 
 ```sh
 installer_dir=$(mktemp -d)
 trap 'rm -rf "$installer_dir"' EXIT
-for component in install install-gateway install-playground; do
+for component in install install-gateway; do
   curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
     -o "$installer_dir/$component.sh" \
     "https://raw.githubusercontent.com/lzjever/botified-releases/main/$component.sh"
@@ -293,7 +262,6 @@ BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install.sh" --scope user
 # For system scope instead:
 # sudo env BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install.sh" --scope system
 BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install-gateway.sh"
-BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install-playground.sh"
 ```
 
 Replace `vX.Y.Z` with a published release tag. Versioned downloads use URLs
@@ -301,7 +269,7 @@ such as `https://github.com/lzjever/botified-releases/releases/download/vX.Y.Z/<
 
 ## Companion Default Paths and PATH
 
-Gateway, Playground, and files-only Core default to the user-writable
+Gateway and files-only Core default to the user-writable
 `~/.local` prefix. Managed Core uses the fixed scope paths documented above.
 
 Add the command directory to your shell startup file if it is not already on
@@ -313,19 +281,16 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ## Custom Companion Install Locations
 
-Gateway and playground use one prefix because their wrappers depend on matching
+Gateway uses one prefix because its wrapper depends on matching
 `bin` and `share` directories:
 
 ```sh
-installer_dir=$(mktemp -d)
-trap 'rm -rf "$installer_dir"' EXIT
-for component in install-gateway install-playground; do
-  curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
-    -o "$installer_dir/$component.sh" \
-    "https://raw.githubusercontent.com/lzjever/botified-releases/main/$component.sh"
-done
-BOTIFIED_PREFIX=/usr/local sh "$installer_dir/install-gateway.sh"
-BOTIFIED_PREFIX=/usr/local sh "$installer_dir/install-playground.sh"
+installer=$(mktemp)
+trap 'rm -f "$installer"' EXIT
+curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
+  -o "$installer" \
+  https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh
+BOTIFIED_PREFIX=/usr/local sh "$installer"
 ```
 
 Use a directory your user can write to, or run with the required permissions.
@@ -336,7 +301,6 @@ Use a directory your user can write to, or run with the required permissions.
 botified --help
 botified-tui --help
 botified-claw-gateway self-check
-botified-playground self-check
 ```
 
 Checksums are published in each release as `SHA256SUMS`. Before extracting or
@@ -376,3 +340,19 @@ Each release publishes:
 - `botified-claw-gateway-companion.tar.gz`
 - `botified-playground.tar.gz`
 - `SHA256SUMS`
+
+## Playground For Developers
+
+The playground is a development surface and is no longer offered as a public
+install entry. Its source, bundled skill, and tests stay in the Botified
+repository:
+
+```sh
+git clone https://github.com/lzjever/botified.git
+cd botified/botified-playground
+```
+
+Run it from the checkout with
+`python3 -m botified_playground.launch_local --agent off`; see the
+[playground README](https://github.com/lzjever/botified/blob/master/botified-playground/README.md)
+for the UI, scenarios, and the optional `make playground-test` checks.
