@@ -32,6 +32,7 @@ host_python=$(host_command python3)
 host_readlink=$(host_command readlink)
 host_realpath=$(host_command realpath)
 host_stat=$(host_command stat)
+host_mkfifo=$(host_command mkfifo)
 host_hash=
 host_hash_kind=
 if command -v sha256sum >/dev/null 2>&1; then
@@ -71,7 +72,13 @@ write_checksums() {
 
 make_generated_fixtures() {
 	dir=$1
-	stage="$tmp_root/stage"
+	fixture_variant=${2:-full}
+	case "$fixture_variant" in
+		full|gateway-selfcheck-fail|gateway-old-bundle) ;;
+		*) die "unknown generated fixture variant $fixture_variant" ;;
+	esac
+	stage="$tmp_root/stage-$fixture_variant"
+	rm -rf "$stage"
 	mkdir -p "$dir" \
 		"$stage/core/bin" \
 		"$stage/core/share/botified/skills/botified-agent-guide" \
@@ -153,7 +160,16 @@ EOF
 Description=Botified Core system fixture
 EOF
 
-	printf '#!/bin/sh\n# fixture gateway companion v9.8.7\n[ "${1:-}" = self-check ]\n' > "$stage/gateway/bin/botified-claw-gateway"
+	case "$fixture_variant" in
+		gateway-selfcheck-fail)
+			printf '#!/bin/sh\n# fixture gateway companion v9.8.7\n[ "${1:-}" != self-check ]\n' \
+				> "$stage/gateway/bin/botified-claw-gateway"
+			;;
+		*)
+			printf '#!/bin/sh\n# fixture gateway companion v9.8.7\n[ "${1:-}" = self-check ]\n' \
+				> "$stage/gateway/bin/botified-claw-gateway"
+			;;
+	esac
 	chmod 0755 "$stage/gateway/bin/botified-claw-gateway"
 	printf 'fixture gateway\n' > "$stage/gateway/share/botified/gateway/dist/src/cli.js"
 	printf 'fixture gateway docs\n' > "$stage/gateway/share/doc/botified-claw-gateway/README.md"
@@ -235,6 +251,12 @@ bridge:
   send_error_notice: false
 EOF
 	done
+
+	if [ "$fixture_variant" = gateway-old-bundle ]; then
+		rm -f "$stage/gateway/share/botified/gateway/systemd/botified-claw-gateway.user.service.template" \
+			"$stage/gateway/share/botified/gateway/systemd/botified-claw-gateway.system.service.template"
+		rm -rf "$stage/gateway/share/botified-claw-gateway/examples/channels"
+	fi
 
 	printf 'fixture asr skill\n' > "$stage/asr-skill/botified-asr/SKILL.md"
 	printf 'fixture asr metadata\n' > "$stage/asr-skill/botified-asr/agents/openai.yaml"
@@ -482,6 +504,19 @@ fi
 command_name=${1:-}
 shift || :
 printf 'systemctl %s %s%s\n' "$scope" "$command_name" "${*:+ $*}" >> "$SHIM_ACTION_LOG"
+unit_state_value=
+unit_state_lookup() {
+	unit_state_key=$1
+	unit_state_value=
+	[ -n "${SHIM_UNIT_STATE:-}" ] && [ -f "$SHIM_UNIT_STATE" ] || return 1
+	while IFS=' ' read -r unit_state_key_found unit_state_value_field unit_state_rest; do
+		[ "$unit_state_key_found" = "$unit_state_key" ] || continue
+		unit_state_value=$unit_state_value_field
+		return 0
+	done < "$SHIM_UNIT_STATE"
+	unit_state_value=
+	return 1
+}
 case "$command_name" in
 	--version) exit 0 ;;
 	show-environment)
@@ -495,12 +530,40 @@ case "$command_name" in
 			"$SHIM_EXPECTED_UNIT_FS" >/dev/null || exit 74
 		;;
 	enable|restart) ;;
-	is-enabled) printf '%s\n' "${SHIM_ENABLED_OUTPUT:-enabled}" ;;
-	is-active) printf '%s\n' "${SHIM_ACTIVE_OUTPUT:-active}" ;;
+	is-enabled)
+		if unit_state_lookup "${1:-}:is-enabled"; then
+			printf '%s\n' "$unit_state_value"
+			[ "$unit_state_value" = enabled ] || exit 1
+			exit 0
+		fi
+		printf '%s\n' "${SHIM_ENABLED_OUTPUT:-enabled}"
+		;;
+	is-active)
+		if unit_state_lookup "${1:-}:is-active"; then
+			printf '%s\n' "$unit_state_value"
+			[ "$unit_state_value" = active ] || exit 1
+			exit 0
+		fi
+		printf '%s\n' "${SHIM_ACTIVE_OUTPUT:-active}"
+		;;
 	show)
 		if [ "$*" = '--property=Version --value' ]; then
 			[ "${SHIM_MANAGER_AVAILABLE:-true}" = true ] || exit 92
 			printf '252\n'
+			exit 0
+		fi
+		show_property=
+		show_unit=
+		show_previous=
+		for show_argument in "$@"; do
+			case "$show_previous" in
+				-p|-P|--property) show_property=$show_argument ;;
+			esac
+			show_previous=$show_argument
+			show_unit=$show_argument
+		done
+		if [ -n "$show_property" ] && unit_state_lookup "$show_unit:$show_property"; then
+			printf '%s\n' "$unit_state_value"
 			exit 0
 		fi
 		count=0
@@ -792,6 +855,8 @@ make_manifest_fixture() {
 		wrong) printf '%064d  %s\n' 0 "$asset" > "$dir/SHA256SUMS" ;;
 		uppercase) printf 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA  %s\n' "$asset" > "$dir/SHA256SUMS" ;;
 		duplicate) printf '%s  %s\n%s  %s\n' "$digest" "$asset" "$digest" "$asset" > "$dir/SHA256SUMS" ;;
+		missing) printf '%s  %s\n' "$(digest_file "$fixture_dir/botified-core-linux-x86_64-musl.tar.gz")" \
+				botified-core-linux-x86_64-musl.tar.gz > "$dir/SHA256SUMS" ;;
 		*) die "unknown manifest fixture mode $mode" ;;
 	esac
 	printf '%s\n' "$dir"
@@ -1189,10 +1254,13 @@ prepare_scoped_case() {
 	scoped_action_log="$scoped_root/actions"
 	scoped_pid_count="$scoped_root/pid-count"
 	scoped_account_state="$scoped_root/account-state"
+	scoped_unit_state_file="$scoped_root/unit-state"
+	scoped_test_tty=
 	mkdir -p "$scoped_home" "$scoped_test_root"
 	: > "$scoped_download_log"
 	: > "$scoped_checksum_log"
 	: > "$scoped_action_log"
+	: > "$scoped_unit_state_file"
 	make_scoped_case_bin "$scoped_bin"
 
 	case "$requested_scope" in
@@ -1263,7 +1331,12 @@ invoke_scoped() {
 		umask "$scoped_umask"
 		unset BOTIFIED_INSTALL_DIR BOTIFIED_SHARE_DIR BOTIFIED_DOC_DIR BOTIFIED_PREFIX
 		unset BOTIFIED_INSTALL_TEST_MODE BOTIFIED_INSTALL_TEST_ROOT
-		unset BOTIFIED_INSTALL_TEST_TTY
+		if [ -n "${scoped_test_tty:-}" ]; then
+			BOTIFIED_INSTALL_TEST_TTY=$scoped_test_tty
+			export BOTIFIED_INSTALL_TEST_TTY
+		else
+			unset BOTIFIED_INSTALL_TEST_TTY
+		fi
 		case "$scoped_test_contract" in
 			both)
 				BOTIFIED_INSTALL_TEST_MODE=1
@@ -1291,6 +1364,18 @@ invoke_scoped() {
 				BOTIFIED_INSTALL_DIR="$scoped_root/custom-bin"
 				export BOTIFIED_INSTALL_DIR
 				;;
+			share)
+				BOTIFIED_SHARE_DIR="$scoped_root/custom-share/botified"
+				export BOTIFIED_SHARE_DIR
+				;;
+			doc)
+				BOTIFIED_DOC_DIR="$scoped_root/custom-share/doc/botified"
+				export BOTIFIED_DOC_DIR
+				;;
+			prefix)
+				BOTIFIED_PREFIX="$scoped_root/custom-prefix"
+				export BOTIFIED_PREFIX
+				;;
 			none) ;;
 			*) exit 98 ;;
 		esac
@@ -1317,6 +1402,7 @@ invoke_scoped() {
 			SHIM_CHANGED_PID="$scoped_changed_pid" \
 			SHIM_HEALTH_PROCESS_ID="$scoped_health_process_id" \
 			SHIM_PID_COUNT="$scoped_pid_count" \
+			SHIM_UNIT_STATE="$scoped_unit_state_file" \
 			SHIM_PROC_EXE="$scoped_proc_exe" \
 			SHIM_EXPECTED_BINARY_FS="$scoped_expected_binary_fs" \
 			SHIM_EXPECTED_UNIT_FS="$scoped_expected_unit_fs" \
@@ -1802,16 +1888,34 @@ run_runtime_verification_failures() {
 
 prepare_gateway_case() {
 	gateway_case_label=$1
-	prepare_scoped_case "gateway-$gateway_case_label" user
+	gateway_case_scope=${2:-user}
+	gateway_channel=${3:-weixin}
+	prepare_scoped_case "gateway-$gateway_case_label" "$gateway_case_scope"
 	scoped_script=install-gateway.sh
-	gateway_wrapper_fs="$scoped_test_root$scoped_home/.local/bin/botified-claw-gateway"
-	gateway_config_dir_fs="$scoped_test_root$scoped_home/.config/botified/gateway"
-	gateway_runtime_tree_fs="$scoped_test_root$scoped_home/.local/share/botified/gateway"
-	gateway_docs_tree_fs="$scoped_test_root$scoped_home/.local/share/doc/botified-claw-gateway"
-	gateway_examples_tree_fs="$scoped_test_root$scoped_home/.local/share/botified-claw-gateway/examples"
-	gateway_unit_fs="$scoped_test_root$scoped_home/.config/systemd/user/botified-claw-gateway-weixin.service"
-	gateway_config_fs="$gateway_config_dir_fs/weixin-gateway.yaml"
-	gateway_env_fs="$gateway_config_dir_fs/weixin-gateway.env"
+	gateway_unit_name="botified-claw-gateway-$gateway_channel.service"
+	if [ "$gateway_case_scope" = user ]; then
+		gateway_config_dir="$scoped_home/.config/botified/gateway"
+		gateway_runtime_tree="$scoped_home/.local/share/botified/gateway"
+		gateway_wrapper_fs="$scoped_test_root$scoped_home/.local/bin/botified-claw-gateway"
+		gateway_config_dir_fs="$scoped_test_root$scoped_home/.config/botified/gateway"
+		gateway_runtime_tree_fs="$scoped_test_root$scoped_home/.local/share/botified/gateway"
+		gateway_docs_tree_fs="$scoped_test_root$scoped_home/.local/share/doc/botified-claw-gateway"
+		gateway_examples_tree_fs="$scoped_test_root$scoped_home/.local/share/botified-claw-gateway/examples"
+		gateway_unit_dir_fs="$scoped_test_root$scoped_home/.config/systemd/user"
+	else
+		gateway_config_dir=/etc/botified/gateway
+		gateway_runtime_tree=/usr/local/share/botified/gateway
+		gateway_wrapper_fs="$scoped_test_root/usr/local/bin/botified-claw-gateway"
+		gateway_config_dir_fs="$scoped_test_root/etc/botified/gateway"
+		gateway_runtime_tree_fs="$scoped_test_root/usr/local/share/botified/gateway"
+		gateway_docs_tree_fs="$scoped_test_root/usr/local/share/doc/botified-claw-gateway"
+		gateway_examples_tree_fs="$scoped_test_root/usr/local/share/botified-claw-gateway/examples"
+		gateway_unit_dir_fs="$scoped_test_root/etc/systemd/system"
+	fi
+	gateway_unit_fs="$gateway_unit_dir_fs/$gateway_unit_name"
+	gateway_config_fs="$gateway_config_dir_fs/$gateway_channel-gateway.yaml"
+	gateway_env_fs="$gateway_config_dir_fs/$gateway_channel-gateway.env"
+	gateway_cli_js="$gateway_runtime_tree/dist/src/cli.js"
 	scoped_expected_binary_fs=$gateway_wrapper_fs
 	scoped_expected_unit_fs=$gateway_unit_fs
 	scoped_expected_release_marker='fixture gateway companion v9.8.7'
@@ -1829,11 +1933,79 @@ seed_gateway_stale_trees() {
 
 assert_no_gateway_activation() {
 	no_activation_label=$1
-	[ "$(grep -F -x -c 'systemctl user daemon-reload' "$scoped_action_log")" -eq 1 ] ||
+	no_activation_scope=${2:-user}
+	[ "$(grep -F -x -c "systemctl $no_activation_scope daemon-reload" "$scoped_action_log")" -eq 1 ] ||
 		die "$no_activation_label did not run daemon-reload exactly once"
-	if grep -Eq '^systemctl user (enable|start|restart|disable|stop) ' "$scoped_action_log"; then
+	if grep -Eq "^systemctl $no_activation_scope (enable|start|restart|disable|stop) " "$scoped_action_log"; then
 		die "$no_activation_label enabled, started, or restarted a gateway channel"
 	fi
+}
+
+seed_gateway_managed_unit() {
+	mkdir -p "$gateway_unit_dir_fs"
+	printf '# Managed by the Botified installer. Inspect and operate with systemd tools.\n[Unit]\nDescription=seeded managed gateway unit\n' \
+		> "$gateway_unit_fs"
+}
+
+set_scoped_unit_state() {
+	printf '%s:%s %s\n' "$1" "$2" "$3" >> "$scoped_unit_state_file"
+}
+
+start_gateway_cmdline_holder() {
+	gateway_holder_script="$scoped_root/cmdline-holder"
+	cat > "$gateway_holder_script" <<'EOF'
+#!/bin/sh
+trap 'exit 0' TERM INT
+while :; do
+	sleep 5
+done
+EOF
+	chmod 0755 "$gateway_holder_script"
+	"$gateway_holder_script" "$@" &
+	gateway_holder_pid=$!
+}
+
+stop_gateway_cmdline_holder() {
+	kill "$gateway_holder_pid" 2>/dev/null || true
+	wait "$gateway_holder_pid" 2>/dev/null || true
+}
+
+prepare_gateway_upgrade_state() {
+	gateway_upgrade_cli_js=${1:-$gateway_cli_js}
+	seed_gateway_managed_unit
+	start_gateway_cmdline_holder "$gateway_upgrade_cli_js" \
+		"$gateway_config_dir/$gateway_channel-gateway.yaml"
+	set_scoped_unit_state "$gateway_unit_name" is-enabled enabled
+	set_scoped_unit_state "$gateway_unit_name" is-active active
+	set_scoped_unit_state "$gateway_unit_name" MainPID "$gateway_holder_pid"
+}
+
+start_gateway_tty_feeder() {
+	gateway_tty_fifo="$scoped_root/tty-fifo"
+	rm -f "$gateway_tty_fifo"
+	"$host_mkfifo" "$gateway_tty_fifo"
+	scoped_test_tty=$gateway_tty_fifo
+	(
+		if [ "$#" -gt 0 ]; then
+			printf '%s\n' "$@"
+		fi
+		exec sleep 30
+	) > "$gateway_tty_fifo" &
+	gateway_tty_feeder_pid=$!
+}
+
+stop_gateway_tty_feeder() {
+	kill "$gateway_tty_feeder_pid" 2>/dev/null || true
+	wait "$gateway_tty_feeder_pid" 2>/dev/null || true
+	rm -f "$gateway_tty_fifo"
+}
+
+make_gateway_companion_variant() {
+	gateway_variant=$1
+	gateway_variant_dir="$tmp_root/mutations/$gateway_variant"
+	rm -rf "$gateway_variant_dir"
+	make_generated_fixtures "$gateway_variant_dir" "$gateway_variant"
+	printf '%s\n' "$gateway_variant_dir"
 }
 
 run_gateway_first_install_case() {
@@ -1977,6 +2149,523 @@ run_gateway_invalid_tar_case() {
 	say_ok "$case_name"
 }
 
+run_gateway_argument_case() {
+	case_name="gateway args require scope before download"
+	prepare_gateway_case argument-contract
+	for arguments in '--channel weixin' '--scope' '--scope bogus' '--scope user --scope system' '--scope user extra'; do
+		: > "$scoped_download_log"
+		: > "$scoped_action_log"
+		# Deliberately split the fixed test inputs into argv.
+		# shellcheck disable=SC2086
+		invoke_scoped $arguments
+		[ "$scoped_status" -eq 2 ] ||
+			die "$case_name did not exit 2 for: $arguments (got $scoped_status)"
+		assert_contains "$scoped_output" 'usage: install-gateway.sh --scope user|system' \
+			"$case_name ($arguments)"
+		assert_no_scoped_side_effects "$case_name ($arguments)"
+	done
+	say_ok "$case_name"
+}
+
+run_gateway_channel_case() {
+	case_name="gateway rejects unknown and empty channel list"
+	prepare_gateway_case channel-validation
+	invoke_scoped --scope user --channel bogus
+	[ "$scoped_status" -eq 2 ] || die "$case_name did not exit 2 for an unknown channel"
+	assert_contains "$scoped_output" \
+		'unknown channel: bogus; valid channels are weixin, feishu, matrix' \
+		"$case_name unknown channel"
+	assert_no_scoped_side_effects "$case_name unknown channel"
+	invoke_scoped --scope user --channel ''
+	[ "$scoped_status" -eq 2 ] || die "$case_name did not exit 2 for an empty channel list"
+	assert_contains "$scoped_output" 'channel list must not be empty' "$case_name empty list"
+	assert_no_scoped_side_effects "$case_name empty channel list"
+	invoke_scoped --scope user --channel ,
+	[ "$scoped_status" -eq 2 ] || die "$case_name did not exit 2 for an empty channel member"
+	assert_contains "$scoped_output" 'channel list must not be empty' "$case_name empty member"
+	assert_no_scoped_side_effects "$case_name empty channel member"
+	say_ok "$case_name"
+}
+
+run_gateway_core_prerequisite_case() {
+	case_name="gateway user scope requires core managed unit"
+	for core_state in missing non-marker symlink; do
+		prepare_gateway_case "core-$core_state"
+		case "$core_state" in
+			missing) rm -f "$scoped_unit_fs" ;;
+			non-marker)
+				printf '[Unit]\nDescription=administrator managed core\n' > "$scoped_unit_fs"
+				;;
+			symlink)
+				gateway_admin_core="$scoped_root/administrator-core.service"
+				printf '[Unit]\nDescription=administrator core\n' > "$gateway_admin_core"
+				rm -f "$scoped_unit_fs"
+				ln -s "$gateway_admin_core" "$scoped_unit_fs"
+				;;
+		esac
+		invoke_scoped --scope user
+		[ "$scoped_status" -eq 1 ] || die "$case_name accepted a $core_state core unit"
+		assert_contains "$scoped_output" 'run install.sh --scope user first' "$case_name $core_state"
+		[ ! -s "$scoped_download_log" ] ||
+			die "$case_name downloaded before rejecting a $core_state core unit"
+		if grep -Eq '^systemctl user (daemon-reload|enable |start |restart )' "$scoped_action_log"; then
+			die "$case_name mutated systemd before rejecting a $core_state core unit"
+		fi
+		assert_scoped_paths_absent "$case_name $core_state" \
+			"$gateway_wrapper_fs" "$gateway_config_fs" "$gateway_env_fs" "$gateway_unit_fs"
+		case "$core_state" in
+			non-marker)
+				[ "$(cat "$scoped_unit_fs")" = '[Unit]
+Description=administrator managed core' ] ||
+					die "$case_name changed a non-marker core unit"
+				;;
+			symlink)
+				[ -L "$scoped_unit_fs" ] || die "$case_name replaced a symlinked core unit"
+				[ "$(cat "$gateway_admin_core")" = '[Unit]
+Description=administrator core' ] ||
+					die "$case_name changed the core unit symlink target"
+				;;
+		esac
+	done
+	say_ok "$case_name"
+}
+
+run_gateway_user_preflight_case() {
+	case_name="gateway user scope preflight matches core rules"
+	prepare_gateway_case preflight-root
+	scoped_uid=0
+	invoke_scoped --scope user
+	[ "$scoped_status" -eq 1 ] || die "$case_name accepted root for user scope"
+	assert_contains "$scoped_output" 'user scope must not run as root' "$case_name root"
+	assert_no_scoped_side_effects "$case_name root"
+
+	prepare_gateway_case preflight-linger
+	scoped_linger=no
+	invoke_scoped --scope user
+	[ "$scoped_status" -eq 1 ] || die "$case_name accepted Linger=no"
+	assert_contains "$scoped_output" 'user scope requires pre-existing Linger=yes' \
+		"$case_name linger"
+	assert_contains "$scoped_output" "sudo loginctl enable-linger $scoped_username" \
+		"$case_name linger"
+	if grep -F enable-linger "$scoped_action_log" >/dev/null 2>&1; then
+		die "$case_name enabled Linger itself"
+	fi
+	[ ! -s "$scoped_download_log" ] || die "$case_name downloaded before rejecting Linger=no"
+
+	prepare_gateway_case preflight-overrides
+	for scoped_path_override in install share doc prefix; do
+		: > "$scoped_download_log"
+		: > "$scoped_action_log"
+		invoke_scoped --scope user
+		[ "$scoped_status" -eq 1 ] ||
+			die "$case_name accepted the $scoped_path_override path override"
+		assert_contains "$scoped_output" \
+			'managed scope does not accept install path overrides' \
+			"$case_name $scoped_path_override"
+		assert_no_scoped_side_effects "$case_name $scoped_path_override"
+	done
+	say_ok "$case_name"
+}
+
+run_gateway_system_preflight_case() {
+	case_name="gateway system scope requires root and core"
+	prepare_gateway_case system-root system
+	scoped_uid=1000
+	invoke_scoped --scope system
+	[ "$scoped_status" -eq 1 ] || die "$case_name accepted non-root system scope"
+	assert_contains "$scoped_output" 'system scope must run as root' "$case_name non-root"
+	assert_no_scoped_side_effects "$case_name non-root"
+
+	prepare_gateway_case system-core system
+	rm -f "$scoped_unit_fs"
+	invoke_scoped --scope system
+	[ "$scoped_status" -eq 1 ] || die "$case_name accepted a missing core system unit"
+	assert_contains "$scoped_output" \
+		'Core is not installed as a managed system service' "$case_name missing core"
+	assert_contains "$scoped_output" 'run install.sh --scope system first' "$case_name missing core"
+	[ ! -s "$scoped_download_log" ] ||
+		die "$case_name downloaded before rejecting a missing core unit"
+	if grep -Eq '^systemctl system (daemon-reload|enable |start |restart )' "$scoped_action_log"; then
+		die "$case_name mutated systemd before rejecting a missing core unit"
+	fi
+	say_ok "$case_name"
+}
+
+run_gateway_skeleton_case() {
+	case_name="gateway places channel skeletons with modes"
+	prepare_gateway_case skeletons user feishu
+	invoke_scoped --scope user --channel feishu
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" "Checksum verified." "$case_name"
+	gateway_data_dir="$scoped_home/.local/state/botified/gateway/feishu/"
+	gateway_log_dir="$scoped_home/.local/state/botified/gateway/feishu/logs/"
+	assert_contains "$gateway_config_fs" "data_dir: \"$gateway_data_dir\"" "$case_name"
+	assert_contains "$gateway_config_fs" "log_dir: \"$gateway_log_dir\"" "$case_name"
+	[ "$gateway_data_dir" != "$gateway_log_dir" ] ||
+		die "$case_name rendered identical data and log directories"
+	if grep -q -e '__RUNTIME_DIR__' -e '__LOG_DIR__' "$gateway_config_fs"; then
+		die "$case_name left path placeholders in the channel skeleton"
+	fi
+	assert_contains "$gateway_env_fs" \
+		"botified-claw-gateway setup --channel feishu --config $gateway_config_dir/feishu-gateway.yaml" \
+		"$case_name"
+	if grep -F 'botified-claw-gateway login' "$gateway_env_fs" >/dev/null 2>&1; then
+		die "$case_name added the weixin-only login hint to a feishu channel"
+	fi
+	assert_contains "$gateway_env_fs" 'botified-claw-gateway-feishu.service' "$case_name"
+	assert_mode "$case_name config" "$gateway_config_fs" 600
+	assert_mode "$case_name env" "$gateway_env_fs" 600
+	assert_mode "$case_name config dir" "$gateway_config_dir_fs" 700
+	[ -f "$gateway_unit_fs" ] || die "$case_name did not render the channel unit"
+	say_ok "$case_name"
+}
+
+run_gateway_unit_render_case() {
+	case_name="gateway renders channel unit from template"
+	prepare_gateway_case unit-render system feishu
+	invoke_scoped --scope system --channel feishu
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	IFS= read -r gateway_render_first_line < "$gateway_unit_fs" || gateway_render_first_line=
+	[ "$gateway_render_first_line" = '# Managed by the Botified installer. Inspect and operate with systemd tools.' ] ||
+		die "$case_name rendered a unit without the managed marker first line"
+	if grep -q '__CHANNEL__' "$gateway_unit_fs"; then
+		die "$case_name rendered a unit with an unreplaced channel placeholder"
+	fi
+	assert_contains "$gateway_unit_fs" \
+		'/usr/local/bin/botified-claw-gateway --config /etc/botified/gateway/feishu-gateway.yaml serve' \
+		"$case_name"
+	assert_contains "$gateway_unit_fs" 'EnvironmentFile=/etc/botified/gateway/feishu-gateway.env' \
+		"$case_name"
+	assert_contains "$gateway_unit_fs" 'User=botified' "$case_name"
+	assert_contains "$gateway_unit_fs" 'After=network-online.target botified.service' "$case_name"
+	assert_contains "$gateway_unit_fs" 'WantedBy=multi-user.target' "$case_name"
+	assert_mode "$case_name unit" "$gateway_unit_fs" 644
+	assert_contains "$gateway_config_fs" 'data_dir: "/var/lib/botified/gateway/feishu/"' "$case_name"
+	assert_contains "$gateway_config_fs" 'log_dir: "/var/lib/botified/gateway/feishu/logs/"' "$case_name"
+	assert_mode "$case_name config" "$gateway_config_fs" 640
+	assert_mode "$case_name env" "$gateway_env_fs" 640
+	assert_mode "$case_name config dir" "$gateway_config_dir_fs" 750
+	assert_no_gateway_activation "$case_name" system
+	assert_contains "$scoped_output" \
+		'systemctl enable --now botified-claw-gateway-feishu.service' "$case_name"
+	say_ok "$case_name"
+}
+
+run_gateway_multi_channel_case() {
+	case_name="gateway multi channel creates independent instances"
+	prepare_gateway_case multi-channel user weixin
+	invoke_scoped --scope user --channel weixin,matrix
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	for gateway_channel_name in weixin matrix; do
+		gateway_channel_config="$gateway_config_dir_fs/$gateway_channel_name-gateway.yaml"
+		gateway_channel_env="$gateway_config_dir_fs/$gateway_channel_name-gateway.env"
+		gateway_channel_unit="$gateway_unit_dir_fs/botified-claw-gateway-$gateway_channel_name.service"
+		[ -f "$gateway_channel_config" ] ||
+			die "$case_name did not place the $gateway_channel_name skeleton"
+		[ -f "$gateway_channel_env" ] ||
+			die "$case_name did not place the $gateway_channel_name env"
+		[ -f "$gateway_channel_unit" ] ||
+			die "$case_name did not render the $gateway_channel_name unit"
+		assert_contains "$gateway_channel_config" \
+			"data_dir: \"$scoped_home/.local/state/botified/gateway/$gateway_channel_name/\"" \
+			"$case_name $gateway_channel_name"
+		IFS= read -r gateway_channel_first < "$gateway_channel_unit" || gateway_channel_first=
+		[ "$gateway_channel_first" = '# Managed by the Botified installer. Inspect and operate with systemd tools.' ] ||
+			die "$case_name rendered a $gateway_channel_name unit without the managed marker"
+	done
+	[ "$(grep -F 'data_dir:' "$gateway_config_dir_fs/weixin-gateway.yaml")" != \
+		"$(grep -F 'data_dir:' "$gateway_config_dir_fs/matrix-gateway.yaml")" ] ||
+		die "$case_name did not separate channel data directories"
+	if grep -F matrix "$gateway_unit_dir_fs/botified-claw-gateway-weixin.service" >/dev/null 2>&1; then
+		die "$case_name leaked the matrix channel into the weixin unit"
+	fi
+	if grep -F weixin "$gateway_unit_dir_fs/botified-claw-gateway-matrix.service" >/dev/null 2>&1; then
+		die "$case_name leaked the weixin channel into the matrix unit"
+	fi
+	say_ok "$case_name"
+}
+
+run_gateway_no_activation_case() {
+	case_name="gateway first install does not enable or start"
+	prepare_gateway_case no-activation user weixin
+	invoke_scoped --scope user --channel weixin,feishu
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	[ "$(grep -F -x -c 'systemctl user daemon-reload' "$scoped_action_log")" -eq 2 ] ||
+		die "$case_name did not run daemon-reload exactly once per channel"
+	if grep -Eq '^systemctl user (enable|start|restart|disable|stop) ' "$scoped_action_log"; then
+		die "$case_name enabled, started, or restarted a gateway channel"
+	fi
+	for gateway_channel_name in weixin feishu; do
+		assert_contains "$scoped_output" \
+			"systemctl --user enable --now botified-claw-gateway-$gateway_channel_name.service" \
+			"$case_name $gateway_channel_name"
+		assert_contains "$scoped_output" \
+			"botified-claw-gateway setup --channel $gateway_channel_name --config" \
+			"$case_name $gateway_channel_name"
+	done
+	say_ok "$case_name"
+}
+
+run_gateway_upgrade_case() {
+	case_name="gateway upgrade restarts enabled unit with runtime proof"
+	prepare_gateway_case upgrade user weixin
+	prepare_gateway_upgrade_state
+	invoke_scoped --scope user
+	stop_gateway_cmdline_holder
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	gateway_actual_sequence=$(grep -E "^systemctl user (daemon-reload|restart $gateway_unit_name)$" \
+		"$scoped_action_log" || true)
+	gateway_expected_sequence=$(printf 'systemctl user daemon-reload\nsystemctl user restart %s' \
+		"$gateway_unit_name")
+	[ "$gateway_actual_sequence" = "$gateway_expected_sequence" ] || {
+		printf 'not ok - %s: upgrade sequence was not reload -> restart\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_action_log" >&2
+		exit 1
+	}
+	if grep -Eq '^systemctl user enable ' "$scoped_action_log"; then
+		die "$case_name enabled a unit during an upgrade"
+	fi
+	assert_contains "$scoped_action_log" "systemctl user is-enabled $gateway_unit_name" "$case_name"
+	[ "$(grep -F -x -c "systemctl user show -p MainPID --value $gateway_unit_name" \
+		"$scoped_action_log")" -eq 2 ] ||
+		die "$case_name did not read MainPID exactly twice"
+	assert_contains "$scoped_output" \
+		"Upgraded and restarted managed gateway channel: $gateway_unit_name" "$case_name"
+	assert_contains "$scoped_output" 'Enabled: enabled' "$case_name"
+	assert_contains "$scoped_output" 'Active: active' "$case_name"
+	assert_contains "$scoped_output" "MainPID: $gateway_holder_pid" "$case_name"
+	if grep -F 'seeded managed gateway unit' "$gateway_unit_fs" >/dev/null 2>&1; then
+		die "$case_name did not re-render the managed unit"
+	fi
+
+	prepare_gateway_case upgrade-cmdline user weixin
+	prepare_gateway_upgrade_state "$scoped_home/.local/share/botified/gateway/dist/src/not-cli.js"
+	invoke_scoped --scope user
+	stop_gateway_cmdline_holder
+	[ "$scoped_status" -eq 4 ] ||
+		die "$case_name did not exit 4 for a forged command line (got $scoped_status)"
+	assert_contains "$scoped_output" "is not running the managed cli.js" "$case_name cmdline"
+	[ "$(grep -F -x -c "systemctl user restart $gateway_unit_name" "$scoped_action_log")" -eq 1 ] ||
+		die "$case_name did not restart before proving the command line"
+
+	prepare_gateway_case upgrade-owner system weixin
+	scoped_proc_uid=0
+	scoped_proc_gid=0
+	prepare_gateway_upgrade_state
+	invoke_scoped --scope system
+	stop_gateway_cmdline_holder
+	[ "$scoped_status" -eq 4 ] ||
+		die "$case_name did not exit 4 for a forged process owner (got $scoped_status)"
+	assert_contains "$scoped_output" 'is not running as botified' "$case_name owner"
+	say_ok "$case_name"
+}
+
+run_gateway_refusal_case() {
+	case_name="gateway refuses unmanaged custom unit"
+	for refusal_state in non-marker symlink active-not-enabled; do
+		prepare_gateway_case "refusal-$refusal_state"
+		case "$refusal_state" in
+			non-marker)
+				mkdir -p "$gateway_unit_dir_fs"
+				printf '[Unit]\nDescription=administrator gateway\n' > "$gateway_unit_fs"
+				;;
+			symlink)
+				gateway_admin_unit="$scoped_root/administrator-gateway.service"
+				printf '[Unit]\nDescription=administrator gateway\n' > "$gateway_admin_unit"
+				mkdir -p "$gateway_unit_dir_fs"
+				ln -s "$gateway_admin_unit" "$gateway_unit_fs"
+				;;
+			active-not-enabled)
+				seed_gateway_managed_unit
+				set_scoped_unit_state "$gateway_unit_name" is-enabled disabled
+				set_scoped_unit_state "$gateway_unit_name" is-active active
+				;;
+		esac
+		invoke_scoped --scope user
+		[ "$scoped_status" -eq 3 ] ||
+			die "$case_name did not exit 3 for $refusal_state (got $scoped_status)"
+		case "$refusal_state" in
+			non-marker|symlink)
+				assert_contains "$scoped_output" \
+					'refusing to replace unmanaged gateway unit' "$case_name $refusal_state"
+				;;
+			active-not-enabled)
+				assert_contains "$scoped_output" \
+					'refusing to take over an active but not enabled gateway unit' \
+					"$case_name $refusal_state"
+				;;
+		esac
+		[ ! -s "$scoped_download_log" ] ||
+			die "$case_name downloaded before refusing $refusal_state"
+		if grep -Eq '^systemctl user (daemon-reload|enable |start |restart |disable |stop )' \
+			"$scoped_action_log"; then
+			die "$case_name mutated systemd or runtime state while refusing $refusal_state"
+		fi
+		assert_scoped_paths_absent "$case_name $refusal_state" \
+			"$gateway_wrapper_fs" "$gateway_config_fs" "$gateway_env_fs"
+		case "$refusal_state" in
+			non-marker)
+				[ "$(cat "$gateway_unit_fs")" = '[Unit]
+Description=administrator gateway' ] ||
+					die "$case_name changed the unmanaged unit"
+				;;
+			symlink)
+				[ -L "$gateway_unit_fs" ] || die "$case_name replaced the unmanaged symlink"
+				[ "$(cat "$gateway_admin_unit")" = '[Unit]
+Description=administrator gateway' ] ||
+					die "$case_name changed the unmanaged symlink target"
+				;;
+			active-not-enabled)
+				[ "$(cat "$gateway_unit_fs")" = '# Managed by the Botified installer. Inspect and operate with systemd tools.
+[Unit]
+Description=seeded managed gateway unit' ] ||
+					die "$case_name changed the active-but-not-enabled unit"
+				;;
+		esac
+	done
+	say_ok "$case_name"
+}
+
+run_gateway_bundle_capability_case() {
+	case_name="gateway bundle capability check precedes placement"
+	prepare_gateway_case bundle-selfcheck
+	scoped_fixture=$(make_gateway_companion_variant gateway-selfcheck-fail)
+	invoke_scoped --scope user
+	[ "$scoped_status" -eq 1 ] || die "$case_name accepted a failing companion self-check"
+	assert_contains "$scoped_output" 'Checksum verified.' "$case_name self-check"
+	assert_contains "$scoped_output" 'companion self-check failed' "$case_name self-check"
+	assert_contains "$scoped_download_log" \
+		"curl https://github.com/lzjever/botified-releases/releases/download/$version/botified-claw-gateway-companion.tar.gz" \
+		"$case_name self-check"
+	assert_scoped_paths_absent "$case_name self-check" \
+		"$gateway_wrapper_fs" "$gateway_runtime_tree_fs" "$gateway_docs_tree_fs" \
+		"$gateway_examples_tree_fs" "$gateway_config_fs" "$gateway_env_fs" "$gateway_unit_fs"
+	if grep -F daemon-reload "$scoped_action_log" >/dev/null 2>&1; then
+		die "$case_name reloaded systemd after a failed self-check"
+	fi
+
+	prepare_gateway_case bundle-old
+	scoped_fixture=$(make_gateway_companion_variant gateway-old-bundle)
+	invoke_scoped --scope user
+	[ "$scoped_status" -eq 1 ] || die "$case_name accepted a companion without unit templates"
+	assert_contains "$scoped_output" \
+		'bundle missing share/botified/gateway/systemd/botified-claw-gateway.user.service.template' \
+		"$case_name old bundle"
+	assert_contains "$scoped_output" \
+		'this companion release predates managed install; upgrade the gateway companion first' \
+		"$case_name old bundle"
+	assert_scoped_paths_absent "$case_name old bundle" \
+		"$gateway_wrapper_fs" "$gateway_runtime_tree_fs" "$gateway_docs_tree_fs" \
+		"$gateway_examples_tree_fs" "$gateway_config_fs" "$gateway_env_fs" "$gateway_unit_fs"
+	if grep -F daemon-reload "$scoped_action_log" >/dev/null 2>&1; then
+		die "$case_name reloaded systemd for an old companion bundle"
+	fi
+	say_ok "$case_name"
+}
+
+run_gateway_env_preservation_case() {
+	case_name="gateway upgrade preserves existing credentials env"
+	prepare_gateway_case env-preserve user weixin
+	prepare_gateway_upgrade_state
+	mkdir -p "$gateway_config_dir_fs"
+	printf 'WEIXIN_CHANNEL_SECRET=fixture-credential\n' > "$gateway_env_fs"
+	chmod 0600 "$gateway_env_fs"
+	printf 'existing: channel config\n' > "$gateway_config_fs"
+	chmod 0600 "$gateway_config_fs"
+	invoke_scoped --scope user
+	stop_gateway_cmdline_holder
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	[ "$(cat "$gateway_env_fs")" = 'WEIXIN_CHANNEL_SECRET=fixture-credential' ] ||
+		die "$case_name changed an existing credentials env"
+	[ "$(cat "$gateway_config_fs")" = 'existing: channel config' ] ||
+		die "$case_name changed an existing channel config"
+	if grep -F fixture-credential "$scoped_output" >/dev/null 2>&1; then
+		die "$case_name printed credentials"
+	fi
+	assert_contains "$gateway_unit_fs" 'Description=Botified Claw Gateway (weixin)' "$case_name"
+	say_ok "$case_name"
+}
+
+run_gateway_interactive_case() {
+	case_name="gateway interactive fallback asks scope and channels"
+	prepare_gateway_case interactive
+	start_gateway_tty_feeder bogus user nope weixin
+	invoke_scoped
+	stop_gateway_tty_feeder
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" 'Gateway install scope (user|system): ' "$case_name answers"
+	assert_contains "$scoped_output" \
+		'Gateway channels, comma separated (weixin|feishu|matrix; empty for weixin): ' \
+		"$case_name answers"
+	assert_contains "$scoped_output" 'for user scope' "$case_name answers"
+	assert_contains "$scoped_output" 'Channels: weixin' "$case_name answers"
+	assert_contains "$scoped_output" "Checksum verified." "$case_name answers"
+	[ -f "$gateway_config_fs" ] && [ -f "$gateway_env_fs" ] && [ -f "$gateway_unit_fs" ] ||
+		die "$case_name did not place channel files from interactive answers"
+	assert_no_gateway_activation "$case_name answers"
+
+	prepare_gateway_case interactive-eof
+	scoped_test_tty=/dev/null
+	invoke_scoped
+	[ "$scoped_status" -eq 5 ] ||
+		die "$case_name did not exit 5 after repeated EOF (got $scoped_status)"
+	assert_contains "$scoped_output" 'no valid answer after 3 attempts' "$case_name eof"
+	assert_no_scoped_side_effects "$case_name eof"
+
+	prepare_gateway_case interactive-no-tty
+	scoped_test_tty="$scoped_root/absent-tty"
+	invoke_scoped
+	[ "$scoped_status" -eq 5 ] ||
+		die "$case_name did not exit 5 without a tty (got $scoped_status)"
+	assert_contains "$scoped_output" "interactive input requires $scoped_root/absent-tty" \
+		"$case_name no tty"
+	assert_no_scoped_side_effects "$case_name no tty"
+	say_ok "$case_name"
+}
+
+run_gateway_missing_manifest_case() {
+	case_name="gateway checksums reject missing manifest entry"
+	prepare_gateway_case missing-manifest
+	scoped_fixture=$(make_manifest_fixture missing-gateway \
+		botified-claw-gateway-companion.tar.gz missing)
+	invoke_scoped --scope user
+	[ "$scoped_status" -ne 0 ] || die "$case_name unexpectedly succeeded"
+	assert_contains "$scoped_output" \
+		"checksum for botified-claw-gateway-companion.tar.gz must appear exactly once" \
+		"$case_name"
+	assert_scoped_paths_absent "$case_name" "$gateway_wrapper_fs" "$gateway_unit_fs" \
+		"$gateway_config_fs" "$gateway_env_fs"
+	say_ok "$case_name"
+}
+
 run_case "core Linux x86_64 prefers sha256sum via curl" install.sh Linux x86_64 curl both "$fixture_dir" success ""
 run_case "core Linux aarch64 via wget and sha256sum" install.sh Linux aarch64 wget sha256sum "$fixture_dir" success ""
 run_case "core warns when gateway needs a separate upgrade" install.sh Linux x86_64 curl sha256sum "$fixture_dir" success "" auto true
@@ -2047,5 +2736,20 @@ run_gateway_checksum_tool_case
 run_gateway_uppercase_digest_case
 run_gateway_duplicate_manifest_case
 run_gateway_invalid_tar_case
+run_gateway_argument_case
+run_gateway_channel_case
+run_gateway_core_prerequisite_case
+run_gateway_user_preflight_case
+run_gateway_system_preflight_case
+run_gateway_skeleton_case
+run_gateway_unit_render_case
+run_gateway_multi_channel_case
+run_gateway_no_activation_case
+run_gateway_upgrade_case
+run_gateway_refusal_case
+run_gateway_bundle_capability_case
+run_gateway_env_preservation_case
+run_gateway_interactive_case
+run_gateway_missing_manifest_case
 
 printf '1..%d\n' "$pass_count"
