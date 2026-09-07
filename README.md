@@ -4,11 +4,17 @@ Public installable releases for Botified.
 
 ## What Should I Install?
 
-| Need | Install | What it gives you |
+| Entry | Command | For |
 | --- | --- | --- |
-| Try Botified quickly without systemd | Core quick start | `botified`, `botified-tui`, core docs, official built-in skills under `~/.local`; no service is created |
-| Run Botified as a resident service | Core managed service | The same files plus a systemd-managed `botified.service` in one fixed scope |
-| Connect Weixin, Feishu/Lark, or Matrix direct messages | Gateway | `botified-claw-gateway`; requires an already running Botified service and Node `>=22.19 <23` |
+| Core quick start | `install.sh` | Try Botified without systemd |
+| Core managed service | `install.sh --scope user\|system` | Resident service with systemd |
+| Gateway managed channels | `install-gateway.sh --scope user\|system [--channel …]` | Weixin/Feishu/Matrix bridging (needs Core + Node `>=22.19 <23`) |
+| Fully offline | download `botified-offline-linux-<arch>.tar.gz`, run `install-offline.sh` | Air-gapped hosts (pre-install Node/Python per entry needs) |
+
+Core quick start installs `botified`, `botified-tui`, core docs, and official
+built-in skills under `~/.local` without creating a service. Core managed
+service adds a systemd-managed `botified.service` in one fixed scope. Gateway
+channels require an already running managed Core service in the same scope.
 
 Install only what you need. The core installer does not install gateway.
 
@@ -302,6 +308,33 @@ BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install-gateway.sh" --scope user --ch
 Replace `vX.Y.Z` with a published release tag. Versioned downloads use URLs
 such as `https://github.com/lzjever/botified-releases/releases/download/vX.Y.Z/<asset>`.
 
+## Install Fully Offline
+
+For an air-gapped host, download the aggregate bundle for its architecture —
+`botified-offline-linux-x86_64.tar.gz` or
+`botified-offline-linux-aarch64-gnu.tar.gz` — and move it to the host with any
+offline medium. The bundle carries `install-offline.sh`, `install.sh`,
+`install-gateway.sh`, the matching core and gateway companion tarballs,
+`SHA256SUMS`, and `INSTALLER-SOURCE`. The orchestrator verifies every member
+against the bundled checksums before installing anything, then runs the same
+installers as the online entries — nothing is downloaded:
+
+```sh
+mkdir botified-offline
+tar -xzf botified-offline-linux-x86_64.tar.gz -C botified-offline
+cd botified-offline
+sh install-offline.sh --core-only    # Entry 1 offline
+sh install-offline.sh --scope user   # Entry 2 offline
+# Entry 3 offline (installs Core first, then Gateway):
+sh install-offline.sh --scope user --gateway --channel weixin
+```
+
+`--gateway` requires `--scope`. With no arguments at all the orchestrator asks
+interactively for the form, scope, and channels. Air-gapped hosts must already
+provide the runtimes the chosen entry needs at runtime — Node `>=22.19 <23`
+for Gateway, Python 3 for Python managed tasks and skills — because the
+installers never download or install a runtime.
+
 ## Companion Default Paths and PATH
 
 User-scope Gateway and files-only Core use the user-writable `~/.local`
@@ -386,6 +419,8 @@ Each release publishes:
 - `botified-core-linux-x86_64-musl.tar.gz`
 - `botified-core-linux-aarch64-gnu.tar.gz`
 - `botified-claw-gateway-companion.tar.gz`
+- `botified-offline-linux-x86_64.tar.gz`
+- `botified-offline-linux-aarch64-gnu.tar.gz`
 - `SHA256SUMS`
 
 ## Playground For Developers
