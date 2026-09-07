@@ -6,15 +6,16 @@ Public installable releases for Botified.
 
 | Need | Install | What it gives you |
 | --- | --- | --- |
-| Run Botified service and terminal UI | Core | `botified`, `botified-tui`, core docs, official built-in skills |
+| Try Botified quickly without systemd | Core quick start | `botified`, `botified-tui`, core docs, official built-in skills under `~/.local`; no service is created |
+| Run Botified as a resident service | Core managed service | The same files plus a systemd-managed `botified.service` in one fixed scope |
 | Connect Weixin, Feishu/Lark, or Matrix direct messages | Gateway | `botified-claw-gateway`; requires an already running Botified service and Node `>=22.19 <23` |
 
 Install only what you need. The core installer does not install gateway.
 
 ## Install Core
 
-The managed installer supports Linux x86_64 and aarch64 with systemd. Download
-and inspect the installer before choosing exactly one scope on a host:
+The Core installer supports Linux x86_64 and aarch64. Download and inspect the
+installer, then pick the entry that matches how Core should run on the host:
 
 ```sh
 installer=$(mktemp)
@@ -25,7 +26,38 @@ curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error
 less "$installer"
 ```
 
-### Managed User Service
+### Quick Start Without systemd
+
+The no-argument command is the fastest way to try Botified. It downloads and
+verifies Core, then installs binaries, Core docs, and bundled skills under the
+current user's `~/.local` directories:
+
+```sh
+sh "$installer"
+```
+
+It does not create a config or systemd unit, enable or start a service, or
+manage an existing process. Use this entry for a first look at Core, or when
+an administrator or another supervisor owns the lifecycle.
+
+Only this no-argument entry accepts Core destination overrides:
+
+```sh
+env \
+  BOTIFIED_INSTALL_DIR=/usr/local/bin \
+  BOTIFIED_DOC_DIR=/usr/local/share/doc/botified \
+  BOTIFIED_SHARE_DIR=/usr/local/share/botified \
+  sh "$installer"
+```
+
+Managed `--scope user|system` uses its fixed layout and rejects these variables
+and `BOTIFIED_PREFIX` before downloading.
+
+### Managed Service With systemd
+
+For a resident service under systemd, choose exactly one scope on a host.
+
+#### Managed User Service
 
 User scope installs for the current non-root NSS user. It requires that the
 administrator has already enabled systemd lingering for that user. Check it
@@ -48,7 +80,7 @@ place, run:
 sh "$installer" --scope user
 ```
 
-### Managed System Service
+#### Managed System Service
 
 System scope installs a system service running as the fixed non-root
 `botified` account. Run the already downloaded and reviewed script with
@@ -60,7 +92,7 @@ sudo sh "$installer" --scope system
 
 The installer does not call `sudo` itself.
 
-### Managed Scope Behavior
+#### Managed Scope Behavior
 
 Both scopes download and verify the matching Core bundle:
 
@@ -121,7 +153,7 @@ Do not install both managed scopes on the same host. The installer only operates
 the explicitly selected systemd manager and does not stop, disable, or repair
 the other one.
 
-### Manual Removal Of Managed Release Files
+#### Manual Removal Of Managed Release Files
 
 There is no installer-owned removal command. Before operating on a canonical
 unit, verify that it is a regular file, is not a symlink, and that its first
@@ -135,33 +167,6 @@ If any check fails, treat the deployment as administrator-owned: do not stop,
 disable, or delete the custom unit using managed-install instructions. For the
 exact per-scope precheck, removal commands, and preserved-data boundary, follow
 the canonical Core guide: [Transparent Manual Removal](https://github.com/lzjever/botified/blob/master/docs/install-upgrade.md#8-transparent-manual-removal).
-
-## Files-Only Core Install
-
-The no-argument command remains available as a legacy files-only leaf:
-
-```sh
-sh "$installer"
-```
-
-It downloads and verifies Core, then installs binaries, Core docs, and bundled
-skills under the current user's `~/.local` directories. It does not create a
-config or systemd unit, enable or start a service, or manage an existing
-process. Use this leaf when an administrator or another supervisor owns the
-lifecycle.
-
-Only the no-argument files-only leaf accepts Core destination overrides:
-
-```sh
-env \
-  BOTIFIED_INSTALL_DIR=/usr/local/bin \
-  BOTIFIED_DOC_DIR=/usr/local/share/doc/botified \
-  BOTIFIED_SHARE_DIR=/usr/local/share/botified \
-  sh "$installer"
-```
-
-Managed `--scope user|system` uses its fixed layout and rejects these variables
-and `BOTIFIED_PREFIX` before downloading.
 
 ## Install Gateway
 
