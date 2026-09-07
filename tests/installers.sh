@@ -80,8 +80,9 @@ make_generated_fixtures() {
 		"$stage/core/share/doc/botified" \
 		"$stage/gateway/bin" \
 		"$stage/gateway/share/botified/gateway/dist/src" \
+		"$stage/gateway/share/botified/gateway/systemd" \
 		"$stage/gateway/share/doc/botified-claw-gateway" \
-		"$stage/gateway/share/botified-claw-gateway/examples" \
+		"$stage/gateway/share/botified-claw-gateway/examples/channels" \
 		"$stage/asr-skill/botified-asr/agents" \
 		"$stage/asr-skill/botified-asr/references" \
 		"$stage/asr-skill/botified-asr/scripts"
@@ -152,11 +153,88 @@ EOF
 Description=Botified Core system fixture
 EOF
 
-	printf '#!/bin/sh\n[ "${1:-}" = self-check ]\n' > "$stage/gateway/bin/botified-claw-gateway"
+	printf '#!/bin/sh\n# fixture gateway companion v9.8.7\n[ "${1:-}" = self-check ]\n' > "$stage/gateway/bin/botified-claw-gateway"
 	chmod 0755 "$stage/gateway/bin/botified-claw-gateway"
 	printf 'fixture gateway\n' > "$stage/gateway/share/botified/gateway/dist/src/cli.js"
 	printf 'fixture gateway docs\n' > "$stage/gateway/share/doc/botified-claw-gateway/README.md"
 	printf 'fixture gateway example\n' > "$stage/gateway/share/botified-claw-gateway/examples/botified-claw-gateway.yaml"
+
+	cat > "$stage/gateway/share/botified/gateway/systemd/botified-claw-gateway.user.service.template" <<'EOF'
+# Managed by the Botified installer. Inspect and operate with systemd tools.
+[Unit]
+Description=Botified Claw Gateway (__CHANNEL__)
+Requires=botified.service
+After=botified.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/botified/workspace
+EnvironmentFile=%h/.config/botified/gateway/__CHANNEL__-gateway.env
+ExecStart=/usr/bin/env HOME=%h PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin %h/.local/bin/botified-claw-gateway --config %h/.config/botified/gateway/__CHANNEL__-gateway.yaml serve
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0077
+
+[Install]
+WantedBy=default.target
+EOF
+
+	cat > "$stage/gateway/share/botified/gateway/systemd/botified-claw-gateway.system.service.template" <<'EOF'
+# Managed by the Botified installer. Inspect and operate with systemd tools.
+[Unit]
+Description=Botified Claw Gateway (__CHANNEL__)
+Requires=botified.service
+After=network-online.target botified.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botified
+Group=botified
+WorkingDirectory=/var/lib/botified/workspace
+EnvironmentFile=/etc/botified/gateway/__CHANNEL__-gateway.env
+ExecStart=/usr/bin/env HOME=/var/lib/botified PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/botified-claw-gateway --config /etc/botified/gateway/__CHANNEL__-gateway.yaml serve
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+	for fixture_channel in weixin feishu matrix; do
+		case "$fixture_channel" in
+			weixin) fixture_channel_id=openclaw-weixin; fixture_channel_package='@tencent-weixin/openclaw-weixin' ;;
+			feishu) fixture_channel_id=feishu; fixture_channel_package='@openclaw/feishu' ;;
+			matrix) fixture_channel_id=matrix; fixture_channel_package='@openclaw/matrix' ;;
+		esac
+		cat > "$stage/gateway/share/botified-claw-gateway/examples/channels/$fixture_channel-gateway.yaml" <<EOF
+botified:
+  base_url: "http://127.0.0.1:17777"
+  service_key: ""
+  request_timeout_secs: 300
+  timeline_idle_timeout_secs: 300
+
+runtime:
+  data_dir: "__RUNTIME_DIR__"
+  log_dir: "__LOG_DIR__"
+
+channel:
+  id: "$fixture_channel_id"
+  package: "$fixture_channel_package"
+  enabled: true
+  config: {}
+
+bridge:
+  serial_inbound: true
+  queue_max_size: 32
+  outbound_text_chunk_chars: 4000
+  send_empty_reply: false
+  send_error_notice: false
+EOF
+	done
 
 	printf 'fixture asr skill\n' > "$stage/asr-skill/botified-asr/SKILL.md"
 	printf 'fixture asr metadata\n' > "$stage/asr-skill/botified-asr/agents/openai.yaml"
@@ -222,7 +300,7 @@ base_bin="$tmp_root/base-bin"
 shim_src="$tmp_root/shim-src"
 mkdir -p "$base_bin" "$shim_src"
 
-for command_name in sh env uname mktemp rm mkdir mv tar gzip install cp chmod dirname grep touch cat; do
+for command_name in sh env uname mktemp rm mkdir mv tar gzip install cp chmod dirname grep touch cat sed tr sleep; do
 	command_path=$(host_command "$command_name")
 	ln -s "$command_path" "$base_bin/$command_name"
 done
@@ -539,7 +617,6 @@ expected_asset() {
 	os=$2
 	arch=$3
 	case "$script" in
-		install-gateway.sh) printf '%s\n' botified-claw-gateway-companion.tar.gz ;;
 		install.sh)
 			case "$os:$arch" in
 				Linux:x86_64) printf '%s\n' botified-core-linux-x86_64-musl.tar.gz ;;
@@ -576,15 +653,6 @@ run_case() {
 	: > "$checksum_log"
 	make_case_bin "$case_bin" "$downloader" "$checksum_tool"
 	asset=$(expected_asset "$script" "$os" "$arch")
-	if [ "$expected_status" = success ] && [ "$script" = install-gateway.sh ]; then
-		mkdir -p \
-			"$prefix/share/botified/gateway" \
-			"$prefix/share/doc/botified-claw-gateway" \
-			"$prefix/share/botified-claw-gateway/examples"
-		printf 'stale\n' > "$prefix/share/botified/gateway/removed-runtime-file"
-		printf 'stale\n' > "$prefix/share/doc/botified-claw-gateway/removed-doc-file"
-		printf 'stale\n' > "$prefix/share/botified-claw-gateway/examples/removed-example-file"
-	fi
 	if [ "$existing_gateway" = true ]; then
 		mkdir -p "$prefix/bin"
 		printf '#!/bin/sh\nexit 0\n' > "$prefix/bin/botified-claw-gateway"
@@ -628,31 +696,9 @@ run_case() {
 				[ -d "$prefix/share/doc/botified" ] || die "$case_name did not install docs"
 				if [ "$existing_gateway" = true ]; then
 					assert_contains "$output" \
-						"botified-claw-gateway is installed but was not upgraded; run install-gateway.sh with BOTIFIED_VERSION=$version" \
+						"botified-claw-gateway is installed but was not upgraded; run install-gateway.sh --scope user|system with BOTIFIED_VERSION=$version" \
 						"$case_name"
 				fi
-				;;
-			install-gateway.sh)
-				[ -x "$prefix/bin/botified-claw-gateway" ] || die "$case_name did not install gateway"
-				[ -s "$prefix/share/botified/gateway/dist/src/cli.js" ] ||
-					die "$case_name did not install gateway runtime"
-				[ -s "$prefix/share/doc/botified-claw-gateway/README.md" ] ||
-					die "$case_name did not install gateway docs"
-				[ -s "$prefix/share/botified-claw-gateway/examples/botified-claw-gateway.yaml" ] ||
-					die "$case_name did not install gateway example"
-				if [ "$generated_fixtures" = true ]; then
-					assert_contains "$prefix/share/botified/gateway/dist/src/cli.js" "fixture gateway" "$case_name"
-					assert_contains "$prefix/share/doc/botified-claw-gateway/README.md" "fixture gateway docs" "$case_name"
-					assert_contains "$prefix/share/botified-claw-gateway/examples/botified-claw-gateway.yaml" "fixture gateway example" "$case_name"
-				fi
-				"$prefix/bin/botified-claw-gateway" self-check ||
-					die "$case_name installed gateway failed self-check"
-				[ ! -e "$prefix/share/botified/gateway/removed-runtime-file" ] ||
-					die "$case_name retained stale runtime files"
-				[ ! -e "$prefix/share/doc/botified-claw-gateway/removed-doc-file" ] ||
-					die "$case_name retained stale docs"
-				[ ! -e "$prefix/share/botified-claw-gateway/examples/removed-example-file" ] ||
-					die "$case_name retained stale examples"
 				;;
 		esac
 	else
@@ -662,10 +708,7 @@ run_case() {
 			exit 1
 		}
 		assert_contains "$output" "$expected_message" "$case_name"
-		case "$script" in
-			install.sh) [ ! -e "$prefix/bin/botified" ] || die "$case_name installed before validation completed" ;;
-			install-gateway.sh) [ ! -e "$prefix/bin/botified-claw-gateway" ] || die "$case_name installed before validation completed" ;;
-		esac
+		[ ! -e "$prefix/bin/botified" ] || die "$case_name installed before validation completed"
 	fi
 
 	assert_contains "$download_log" "$downloader https://github.com/lzjever/botified-releases/releases/download/$version/$asset" "$case_name"
@@ -1208,6 +1251,10 @@ prepare_scoped_case() {
 	scoped_test_contract=both
 	scoped_path_override=none
 	scoped_umask=0022
+	scoped_script=install.sh
+	scoped_expected_binary_fs=$scoped_binary_fs
+	scoped_expected_unit_fs=$scoped_unit_fs
+	scoped_expected_release_marker='fixture core release v9.8.7'
 }
 
 invoke_scoped() {
@@ -1216,6 +1263,7 @@ invoke_scoped() {
 		umask "$scoped_umask"
 		unset BOTIFIED_INSTALL_DIR BOTIFIED_SHARE_DIR BOTIFIED_DOC_DIR BOTIFIED_PREFIX
 		unset BOTIFIED_INSTALL_TEST_MODE BOTIFIED_INSTALL_TEST_ROOT
+		unset BOTIFIED_INSTALL_TEST_TTY
 		case "$scoped_test_contract" in
 			both)
 				BOTIFIED_INSTALL_TEST_MODE=1
@@ -1270,9 +1318,9 @@ invoke_scoped() {
 			SHIM_HEALTH_PROCESS_ID="$scoped_health_process_id" \
 			SHIM_PID_COUNT="$scoped_pid_count" \
 			SHIM_PROC_EXE="$scoped_proc_exe" \
-			SHIM_EXPECTED_BINARY_FS="$scoped_binary_fs" \
-			SHIM_EXPECTED_UNIT_FS="$scoped_unit_fs" \
-			SHIM_EXPECTED_RELEASE_MARKER='fixture core release v9.8.7' \
+			SHIM_EXPECTED_BINARY_FS="$scoped_expected_binary_fs" \
+			SHIM_EXPECTED_UNIT_FS="$scoped_expected_unit_fs" \
+			SHIM_EXPECTED_RELEASE_MARKER="$scoped_expected_release_marker" \
 			SHIM_SETUP_FAIL="$scoped_setup_fail" \
 			SHIM_CONFIG_CHECK_FAIL="$scoped_config_check_fail" \
 			SHIM_MANAGER_AVAILABLE="$scoped_manager_available" \
@@ -1289,7 +1337,7 @@ invoke_scoped() {
 			SHIM_REAL_REALPATH="$host_realpath" \
 			SHIM_REAL_STAT="$host_stat" \
 			BOTIFIED_VERSION="$version"
-		"$host_sh" "$repo_root/install.sh" "$@"
+		"$host_sh" "$repo_root/$scoped_script" "$@"
 	) > "$scoped_output" 2>&1
 	scoped_status=$?
 	set -e
@@ -1752,14 +1800,188 @@ run_runtime_verification_failures() {
 	say_ok "$case_name"
 }
 
+prepare_gateway_case() {
+	gateway_case_label=$1
+	prepare_scoped_case "gateway-$gateway_case_label" user
+	scoped_script=install-gateway.sh
+	gateway_wrapper_fs="$scoped_test_root$scoped_home/.local/bin/botified-claw-gateway"
+	gateway_config_dir_fs="$scoped_test_root$scoped_home/.config/botified/gateway"
+	gateway_runtime_tree_fs="$scoped_test_root$scoped_home/.local/share/botified/gateway"
+	gateway_docs_tree_fs="$scoped_test_root$scoped_home/.local/share/doc/botified-claw-gateway"
+	gateway_examples_tree_fs="$scoped_test_root$scoped_home/.local/share/botified-claw-gateway/examples"
+	gateway_unit_fs="$scoped_test_root$scoped_home/.config/systemd/user/botified-claw-gateway-weixin.service"
+	gateway_config_fs="$gateway_config_dir_fs/weixin-gateway.yaml"
+	gateway_env_fs="$gateway_config_dir_fs/weixin-gateway.env"
+	scoped_expected_binary_fs=$gateway_wrapper_fs
+	scoped_expected_unit_fs=$gateway_unit_fs
+	scoped_expected_release_marker='fixture gateway companion v9.8.7'
+	mkdir -p "${scoped_unit_fs%/*}"
+	printf '# Managed by the Botified installer. Inspect and operate with systemd tools.\n[Unit]\nDescription=fixture core\n' \
+		> "$scoped_unit_fs"
+}
+
+seed_gateway_stale_trees() {
+	mkdir -p "$gateway_runtime_tree_fs" "$gateway_docs_tree_fs" "$gateway_examples_tree_fs"
+	printf 'stale\n' > "$gateway_runtime_tree_fs/removed-runtime-file"
+	printf 'stale\n' > "$gateway_docs_tree_fs/removed-doc-file"
+	printf 'stale\n' > "$gateway_examples_tree_fs/removed-example-file"
+}
+
+assert_no_gateway_activation() {
+	no_activation_label=$1
+	[ "$(grep -F -x -c 'systemctl user daemon-reload' "$scoped_action_log")" -eq 1 ] ||
+		die "$no_activation_label did not run daemon-reload exactly once"
+	if grep -Eq '^systemctl user (enable|start|restart|disable|stop) ' "$scoped_action_log"; then
+		die "$no_activation_label enabled, started, or restarted a gateway channel"
+	fi
+}
+
+run_gateway_first_install_case() {
+	case_name="gateway managed user install places release without activation"
+	prepare_gateway_case first-install
+	seed_gateway_stale_trees
+	invoke_scoped --scope user
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" "Checksum verified." "$case_name"
+	[ -x "$gateway_wrapper_fs" ] || die "$case_name did not install the gateway wrapper"
+	[ -s "$gateway_runtime_tree_fs/dist/src/cli.js" ] ||
+		die "$case_name did not install the gateway runtime"
+	[ -s "$gateway_runtime_tree_fs/systemd/botified-claw-gateway.user.service.template" ] ||
+		die "$case_name did not install the unit template"
+	[ -s "$gateway_docs_tree_fs/README.md" ] || die "$case_name did not install gateway docs"
+	[ -s "$gateway_examples_tree_fs/botified-claw-gateway.yaml" ] ||
+		die "$case_name did not install gateway examples"
+	[ ! -e "$gateway_runtime_tree_fs/removed-runtime-file" ] ||
+		die "$case_name retained stale runtime files"
+	[ ! -e "$gateway_docs_tree_fs/removed-doc-file" ] ||
+		die "$case_name retained stale docs"
+	[ ! -e "$gateway_examples_tree_fs/removed-example-file" ] ||
+		die "$case_name retained stale examples"
+	"$gateway_wrapper_fs" self-check || die "$case_name installed gateway failed self-check"
+	gateway_config_dir="$scoped_home/.config/botified/gateway"
+	gateway_data_dir="$scoped_home/.local/share/botified/gateway/weixin/"
+	gateway_log_dir="$scoped_home/.local/share/botified/gateway/weixin/logs/"
+	assert_contains "$gateway_config_fs" "data_dir: \"$gateway_data_dir\"" "$case_name"
+	assert_contains "$gateway_config_fs" "log_dir: \"$gateway_log_dir\"" "$case_name"
+	if grep -q -e '__RUNTIME_DIR__' -e '__LOG_DIR__' "$gateway_config_fs"; then
+		die "$case_name left path placeholders in the channel skeleton"
+	fi
+	assert_contains "$gateway_env_fs" \
+		"botified-claw-gateway setup --channel weixin --config $gateway_config_dir/weixin-gateway.yaml" \
+		"$case_name"
+	assert_contains "$gateway_env_fs" \
+		"botified-claw-gateway login --config $gateway_config_dir/weixin-gateway.yaml" \
+		"$case_name"
+	assert_contains "$gateway_env_fs" "botified-claw-gateway-weixin.service" "$case_name"
+	IFS= read -r gateway_unit_first_line < "$gateway_unit_fs" || gateway_unit_first_line=
+	[ "$gateway_unit_first_line" = '# Managed by the Botified installer. Inspect and operate with systemd tools.' ] ||
+		die "$case_name rendered a unit without the managed marker first line"
+	if grep -q '__CHANNEL__' "$gateway_unit_fs"; then
+		die "$case_name rendered a unit with an unreplaced channel placeholder"
+	fi
+	assert_contains "$gateway_unit_fs" \
+		"%h/.local/bin/botified-claw-gateway --config %h/.config/botified/gateway/weixin-gateway.yaml serve" \
+		"$case_name"
+	assert_contains "$gateway_unit_fs" "Requires=botified.service" "$case_name"
+	assert_mode "$case_name unit" "$gateway_unit_fs" 644
+	assert_mode "$case_name config" "$gateway_config_fs" 600
+	assert_mode "$case_name env" "$gateway_env_fs" 600
+	assert_mode "$case_name config dir" "$gateway_config_dir_fs" 700
+	assert_no_gateway_activation "$case_name"
+	assert_contains "$scoped_output" \
+		"botified-claw-gateway setup --channel weixin --config $gateway_config_dir/weixin-gateway.yaml" \
+		"$case_name"
+	assert_contains "$scoped_output" \
+		"botified-claw-gateway login --config $gateway_config_dir/weixin-gateway.yaml" \
+		"$case_name"
+	assert_contains "$scoped_output" \
+		"systemctl --user enable --now botified-claw-gateway-weixin.service" "$case_name"
+	assert_contains "$scoped_download_log" \
+		"curl https://github.com/lzjever/botified-releases/releases/download/$version/botified-claw-gateway-companion.tar.gz" \
+		"$case_name"
+	assert_contains "$scoped_download_log" \
+		"curl https://github.com/lzjever/botified-releases/releases/download/$version/SHA256SUMS" \
+		"$case_name"
+	say_ok "$case_name"
+}
+
+run_gateway_checksum_tool_case() {
+	case_name="gateway checksum tools are mandatory"
+	prepare_gateway_case checksum-tool
+	rm "$scoped_bin/sha256sum"
+	invoke_scoped --scope user
+	[ "$scoped_status" -ne 0 ] || die "$case_name unexpectedly succeeded"
+	assert_contains "$scoped_output" "sha256sum or shasum is required" "$case_name"
+	assert_scoped_paths_absent "$case_name" "$gateway_wrapper_fs" "$gateway_unit_fs" \
+		"$gateway_config_fs" "$gateway_env_fs"
+	assert_contains "$scoped_download_log" \
+		"curl https://github.com/lzjever/botified-releases/releases/download/$version/botified-claw-gateway-companion.tar.gz" \
+		"$case_name"
+	say_ok "$case_name"
+}
+
+run_gateway_uppercase_digest_case() {
+	case_name="gateway rejects uppercase checksum before hashing"
+	prepare_gateway_case uppercase-digest
+	rm "$scoped_bin/sha256sum"
+	ln -s "$shim_src/shasum" "$scoped_bin/shasum"
+	scoped_fixture=$(make_manifest_fixture uppercase-gateway \
+		botified-claw-gateway-companion.tar.gz uppercase)
+	invoke_scoped --scope user
+	[ "$scoped_status" -ne 0 ] || die "$case_name unexpectedly succeeded"
+	assert_contains "$scoped_output" "invalid checksum" "$case_name"
+	[ ! -s "$scoped_checksum_log" ] ||
+		die "$case_name ran a checksum tool before rejecting the manifest digest"
+	assert_scoped_paths_absent "$case_name" "$gateway_wrapper_fs" "$gateway_unit_fs" \
+		"$gateway_config_fs" "$gateway_env_fs"
+	say_ok "$case_name"
+}
+
+run_gateway_duplicate_manifest_case() {
+	case_name="gateway duplicate target checksum fails"
+	prepare_gateway_case duplicate-manifest
+	rm "$scoped_bin/curl"
+	ln -s "$shim_src/download" "$scoped_bin/wget"
+	scoped_fixture=$(make_manifest_fixture duplicate-gateway \
+		botified-claw-gateway-companion.tar.gz duplicate)
+	invoke_scoped --scope user
+	[ "$scoped_status" -ne 0 ] || die "$case_name unexpectedly succeeded"
+	assert_contains "$scoped_output" \
+		"checksum for botified-claw-gateway-companion.tar.gz must appear exactly once" \
+		"$case_name"
+	assert_scoped_paths_absent "$case_name" "$gateway_wrapper_fs" "$gateway_unit_fs" \
+		"$gateway_config_fs" "$gateway_env_fs"
+	assert_contains "$scoped_download_log" \
+		"wget https://github.com/lzjever/botified-releases/releases/download/$version/botified-claw-gateway-companion.tar.gz" \
+		"$case_name"
+	say_ok "$case_name"
+}
+
+run_gateway_invalid_tar_case() {
+	case_name="gateway checksum-correct invalid tar fails extraction"
+	prepare_gateway_case invalid-tar
+	rm "$scoped_bin/sha256sum"
+	ln -s "$shim_src/shasum" "$scoped_bin/shasum"
+	scoped_fixture=$(make_invalid_tar_fixture botified-claw-gateway-companion.tar.gz)
+	invoke_scoped --scope user
+	[ "$scoped_status" -ne 0 ] || die "$case_name unexpectedly succeeded"
+	assert_scoped_paths_absent "$case_name" "$gateway_wrapper_fs" "$gateway_unit_fs" \
+		"$gateway_config_fs" "$gateway_env_fs" "$gateway_runtime_tree_fs"
+	if grep -Eq '^systemctl user (daemon-reload|enable |start |restart )' "$scoped_action_log"; then
+		die "$case_name mutated systemd before rejecting the bundle"
+	fi
+	say_ok "$case_name"
+}
+
 run_case "core Linux x86_64 prefers sha256sum via curl" install.sh Linux x86_64 curl both "$fixture_dir" success ""
 run_case "core Linux aarch64 via wget and sha256sum" install.sh Linux aarch64 wget sha256sum "$fixture_dir" success ""
 run_case "core warns when gateway needs a separate upgrade" install.sh Linux x86_64 curl sha256sum "$fixture_dir" success "" auto true
 run_unsupported_core_case "core rejects Darwin x86_64 before download" Darwin x86_64
 run_unsupported_core_case "core rejects Darwin arm64 before download" Darwin arm64
-run_case "gateway normal install" install-gateway.sh Linux x86_64 curl sha256sum "$fixture_dir" success ""
-
-run_case "checksum tools are mandatory" install-gateway.sh Linux x86_64 curl none "$fixture_dir" failure "sha256sum or shasum is required"
 
 asset=botified-core-linux-x86_64-musl.tar.gz
 wrong_fixture=$(make_manifest_fixture wrong "$asset" wrong)
@@ -1769,21 +1991,9 @@ asset=botified-core-linux-x86_64-musl.tar.gz
 uppercase_core_fixture=$(make_manifest_fixture uppercase-core "$asset" uppercase)
 run_case "core rejects uppercase checksum before hashing" install.sh Linux x86_64 curl sha256sum "$uppercase_core_fixture" failure "invalid checksum" not-called
 
-asset=botified-claw-gateway-companion.tar.gz
-uppercase_gateway_fixture=$(make_manifest_fixture uppercase-gateway "$asset" uppercase)
-run_case "gateway rejects uppercase checksum before hashing" install-gateway.sh Linux x86_64 curl shasum "$uppercase_gateway_fixture" failure "invalid checksum" not-called
-
-asset=botified-claw-gateway-companion.tar.gz
-duplicate_fixture=$(make_manifest_fixture duplicate "$asset" duplicate)
-run_case "duplicate target checksum fails" install-gateway.sh Linux x86_64 wget sha256sum "$duplicate_fixture" failure "checksum for $asset must appear exactly once"
-
 asset=botified-core-linux-x86_64-musl.tar.gz
 truncated_fixture=$(make_truncated_fixture "$asset")
 run_case "truncated archive fails checksum before extraction" install.sh Linux x86_64 wget sha256sum "$truncated_fixture" failure "checksum mismatch"
-
-asset=botified-claw-gateway-companion.tar.gz
-invalid_tar_fixture=$(make_invalid_tar_fixture "$asset")
-run_case "checksum-correct invalid tar fails extraction" install-gateway.sh Linux x86_64 curl shasum "$invalid_tar_fixture" failure ""
 
 run_asr_argument_case "ASR skill requires target arguments"
 run_asr_argument_case "ASR skill rejects an unknown target" --target unknown
@@ -1831,5 +2041,11 @@ run_bundle_and_config_validation_case
 run_user_repeat_success_case
 run_system_first_install_success_case
 run_runtime_verification_failures
+
+run_gateway_first_install_case
+run_gateway_checksum_tool_case
+run_gateway_uppercase_digest_case
+run_gateway_duplicate_manifest_case
+run_gateway_invalid_tar_case
 
 printf '1..%d\n' "$pass_count"

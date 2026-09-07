@@ -615,7 +615,7 @@ log "Installed: $install_dir/botified-tui"
 log "Installed skills: $skill_dir"
 log "Installed docs: $doc_dir"
 if [ -x "$install_dir/botified-claw-gateway" ] || command -v botified-claw-gateway >/dev/null 2>&1; then
-	warn "botified-claw-gateway is installed but was not upgraded; run install-gateway.sh with BOTIFIED_VERSION=$version"
+	warn "botified-claw-gateway is installed but was not upgraded; run install-gateway.sh --scope user|system with BOTIFIED_VERSION=$version"
 fi
 
 case ":$PATH:" in
