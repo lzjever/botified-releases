@@ -1863,8 +1863,8 @@ run_gateway_first_install_case() {
 		die "$case_name retained stale examples"
 	"$gateway_wrapper_fs" self-check || die "$case_name installed gateway failed self-check"
 	gateway_config_dir="$scoped_home/.config/botified/gateway"
-	gateway_data_dir="$scoped_home/.local/share/botified/gateway/weixin/"
-	gateway_log_dir="$scoped_home/.local/share/botified/gateway/weixin/logs/"
+	gateway_data_dir="$scoped_home/.local/state/botified/gateway/weixin/"
+	gateway_log_dir="$scoped_home/.local/state/botified/gateway/weixin/logs/"
 	assert_contains "$gateway_config_fs" "data_dir: \"$gateway_data_dir\"" "$case_name"
 	assert_contains "$gateway_config_fs" "log_dir: \"$gateway_log_dir\"" "$case_name"
 	if grep -q -e '__RUNTIME_DIR__' -e '__LOG_DIR__' "$gateway_config_fs"; then

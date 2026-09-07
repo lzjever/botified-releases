@@ -138,6 +138,7 @@ is_decimal() {
 interactive_ask() {
 	ask_prompt=$1
 	ask_pattern=$2
+	ask_hint=$3
 	ask_tty=${BOTIFIED_INSTALL_TEST_TTY:-/dev/tty}
 	[ -e "$ask_tty" ] ||
 		interactive_fail "interactive input requires $ask_tty; pass --scope explicitly"
@@ -153,7 +154,7 @@ interactive_ask() {
 			return 0
 		fi
 		[ "$ask_attempt" -lt 3 ] ||
-			interactive_fail "no valid answer after 3 attempts; pass --scope explicitly"
+			interactive_fail "no valid answer after 3 attempts; $ask_hint"
 	done
 }
 
@@ -296,7 +297,7 @@ set_scoped_layout() {
 		examples_tree="$scope_home/.local/share/botified-claw-gateway/examples"
 		gateway_config_dir="$scope_home/.config/botified/gateway"
 		gateway_unit_dir="$scope_home/.config/systemd/user"
-		data_root="$scope_home/.local/share/botified/gateway"
+		data_root="$scope_home/.local/state/botified/gateway"
 		core_unit="$scope_home/.config/systemd/user/botified.service"
 	else
 		gateway_binary=/usr/local/bin/botified-claw-gateway
@@ -505,28 +506,6 @@ replace_scoped_tree() {
 	rm -rf "$tree_old"
 }
 
-replace_gateway_runtime_tree() {
-	runtime_source=$1
-	runtime_target=$2
-	runtime_parent=${runtime_target%/*}
-	data_staging="$runtime_parent/.gateway-channel-data.$$"
-	rm -rf "$data_staging"
-	mkdir -p "$data_staging"
-	for preserved_channel in weixin feishu matrix; do
-		if [ -d "$runtime_target/$preserved_channel" ] &&
-			[ ! -L "$runtime_target/$preserved_channel" ]; then
-			mv "$runtime_target/$preserved_channel" "$data_staging/"
-		fi
-	done
-	replace_scoped_tree "$runtime_source" "$runtime_target"
-	for preserved_channel in weixin feishu matrix; do
-		if [ -d "$data_staging/$preserved_channel" ]; then
-			mv "$data_staging/$preserved_channel" "$runtime_target/$preserved_channel"
-		fi
-	done
-	rm -rf "$data_staging"
-}
-
 commit_scoped_release() {
 	if [ "$managed_scope" = system ]; then
 		docs_parent_fs=${docs_tree_fs%/*}
@@ -539,7 +518,7 @@ commit_scoped_release() {
 			chmod 0755 "$docs_parent_fs"
 		fi
 	fi
-	replace_gateway_runtime_tree "$bundle_dir/share/botified/gateway" "$runtime_tree_fs"
+	replace_scoped_tree "$bundle_dir/share/botified/gateway" "$runtime_tree_fs"
 	replace_scoped_tree "$bundle_dir/share/doc/botified-claw-gateway" "$docs_tree_fs"
 	replace_scoped_tree "$bundle_dir/share/botified-claw-gateway/examples" "$examples_tree_fs"
 	place_scoped_file "$bundle_dir/bin/botified-claw-gateway" "$gateway_binary_fs" 0755
@@ -588,8 +567,11 @@ prepare_channel_files() {
 # Interactive (all channels, same command shape; secrets are prompted with echo off):
 #   botified-claw-gateway setup --channel $prepare_channel --config $gateway_config_dir/$prepare_channel-gateway.yaml
 # Non-interactive flags for automation: see \`botified-claw-gateway setup --help\`
-# Weixin only: after setup, run botified-claw-gateway login --config $gateway_config_dir/$prepare_channel-gateway.yaml
 EOF
+		if [ "$prepare_channel" = weixin ]; then
+			printf '# Weixin only: after setup, run botified-claw-gateway login --config %s/%s-gateway.yaml\n' \
+				"$gateway_config_dir" "$prepare_channel" >> "$prepare_env_rendered"
+		fi
 		if [ "$managed_scope" = user ]; then
 			place_scoped_file "$prepare_env_rendered" "$prepare_env_fs" 0600
 		else
@@ -696,14 +678,14 @@ install_gateway() {
 	fi
 	log "Installing botified-claw-gateway from $repo ($version) for $managed_scope scope"
 	log "Channels: $channel_list"
-	download "$base_url/$asset" "$tmpdir/$asset"
-	download "$base_url/SHA256SUMS" "$tmpdir/SHA256SUMS"
+	download "$base_url/$asset" "$tmpdir/$asset" || fail "could not download $asset"
+	download "$base_url/SHA256SUMS" "$tmpdir/SHA256SUMS" || fail "could not download SHA256SUMS"
 	need_checksum
 	verify_checksum "$tmpdir/SHA256SUMS" "$tmpdir/$asset" "$asset"
 	log "Checksum verified."
 	bundle_dir="$tmpdir/bundle"
 	mkdir -p "$bundle_dir"
-	tar -xzf "$tmpdir/$asset" -C "$bundle_dir"
+	tar -xzf "$tmpdir/$asset" -C "$bundle_dir" || fail "could not extract $asset"
 	validate_scoped_bundle
 	commit_scoped_release
 	previous_ifs=$IFS
@@ -774,7 +756,8 @@ done
 
 if [ "$argument_count" -eq 0 ]; then
 	scope_answer=$(interactive_ask \
-		'Gateway install scope (user|system): ' '^(user|system)$') ||
+		'Gateway install scope (user|system): ' '^(user|system)$' \
+		'pass --scope explicitly') ||
 		exit 5
 	case "$scope_answer" in
 		user|system) managed_scope=$scope_answer ;;
@@ -782,7 +765,8 @@ if [ "$argument_count" -eq 0 ]; then
 	esac
 	channel_answer=$(interactive_ask \
 		'Gateway channels, comma separated (weixin|feishu|matrix; empty for weixin): ' \
-		'^$|^(weixin|feishu|matrix)(,(weixin|feishu|matrix))*$') ||
+		'^$|^(weixin|feishu|matrix)(,(weixin|feishu|matrix))*$' \
+		'answer a comma separated channel list (weixin, feishu, matrix), or pass --scope and --channel explicitly') ||
 		exit 5
 	channel_input=$channel_answer
 fi
