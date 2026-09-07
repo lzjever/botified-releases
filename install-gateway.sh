@@ -42,6 +42,9 @@ interactive_fail() {
 }
 
 need_downloader() {
+	if [ -n "${BOTIFIED_ASSET_DIR:-}" ]; then
+		return
+	fi
 	if command -v curl >/dev/null 2>&1; then
 		downloader=curl
 	elif command -v wget >/dev/null 2>&1; then
@@ -121,6 +124,13 @@ verify_checksum() {
 download() {
 	url=$1
 	out=$2
+	if [ -n "${BOTIFIED_ASSET_DIR:-}" ]; then
+		asset_name=${url##*/}
+		[ -f "$BOTIFIED_ASSET_DIR/$asset_name" ] ||
+			fail "BOTIFIED_ASSET_DIR is set but $asset_name is missing; populate the asset directory or unset BOTIFIED_ASSET_DIR to download"
+		cp "$BOTIFIED_ASSET_DIR/$asset_name" "$out"
+		return
+	fi
 	if [ "$downloader" = curl ]; then
 		curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error -o "$out" "$url"
 	else

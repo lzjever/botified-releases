@@ -47,6 +47,7 @@ fi
 
 tmp_root=$(mktemp -d 2>/dev/null || mktemp -d -t botified-installers-test)
 trap 'rm -rf "$tmp_root"' EXIT HUP INT TERM
+unset BOTIFIED_ASSET_DIR
 
 digest_file() {
 	if [ "$host_hash_kind" = sha256sum ]; then
@@ -931,6 +932,28 @@ make_unsafe_asr_fixture() {
 	printf '%s\n' "$dir"
 }
 
+make_incomplete_asset_dir() {
+	incomplete_kind=$1
+	dir="$tmp_root/mutations/asset-dir-$incomplete_kind"
+	rm -rf "$dir"
+	mkdir -p "$dir"
+	case "$incomplete_kind" in
+		missing-asset)
+			cp "$fixture_dir/SHA256SUMS" "$dir/SHA256SUMS"
+			;;
+		missing-manifest)
+			for incomplete_asset in \
+				botified-claw-gateway-companion.tar.gz \
+				botified-core-linux-x86_64-musl.tar.gz
+			do
+				cp "$fixture_dir/$incomplete_asset" "$dir/$incomplete_asset"
+			done
+			;;
+		*) die "unknown incomplete asset dir kind $incomplete_kind" ;;
+	esac
+	printf '%s\n' "$dir"
+}
+
 asr_target_path() {
 	case "$1" in
 		codex) printf '%s\n' "$2/.codex/skills/botified-asr" ;;
@@ -1318,6 +1341,7 @@ prepare_scoped_case() {
 	scoped_config_check_fail=false
 	scoped_test_contract=both
 	scoped_path_override=none
+	scoped_asset_dir=
 	scoped_umask=0022
 	scoped_script=install.sh
 	scoped_expected_binary_fs=$scoped_binary_fs
@@ -1331,6 +1355,12 @@ invoke_scoped() {
 		umask "$scoped_umask"
 		unset BOTIFIED_INSTALL_DIR BOTIFIED_SHARE_DIR BOTIFIED_DOC_DIR BOTIFIED_PREFIX
 		unset BOTIFIED_INSTALL_TEST_MODE BOTIFIED_INSTALL_TEST_ROOT
+		if [ -n "${scoped_asset_dir:-}" ]; then
+			BOTIFIED_ASSET_DIR=$scoped_asset_dir
+			export BOTIFIED_ASSET_DIR
+		else
+			unset BOTIFIED_ASSET_DIR
+		fi
 		if [ -n "${scoped_test_tty:-}" ]; then
 			BOTIFIED_INSTALL_TEST_TTY=$scoped_test_tty
 			export BOTIFIED_INSTALL_TEST_TTY
@@ -2666,6 +2696,121 @@ run_gateway_missing_manifest_case() {
 	say_ok "$case_name"
 }
 
+run_asset_dir_local_mode_case() {
+	case_name="asset dir mode serves tarballs locally without network"
+	prepare_scoped_case asset-dir-scoped user
+	scoped_asset_dir=$fixture_dir
+	rm "$scoped_bin/curl"
+	invoke_scoped --scope user
+	scoped_asset_dir=
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: scoped core run failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" "Checksum verified." "$case_name scoped"
+	[ -x "$scoped_binary_fs" ] || die "$case_name did not install the scoped binary"
+	grep -F 'fixture core release v9.8.7' "$scoped_binary_fs" >/dev/null ||
+		die "$case_name did not place the local asset dir tarball contents"
+	[ ! -s "$scoped_download_log" ] || die "$case_name downloaded the core tarball"
+	assert_contains "$scoped_checksum_log" sha256sum "$case_name scoped"
+
+	files_prefix="$scoped_root/files-only"
+	set +e
+	BOTIFIED_ASSET_DIR="$fixture_dir" \
+	PATH="$scoped_bin:$base_bin" \
+	HOME="$scoped_home" \
+	SHIM_OS=Linux \
+	SHIM_ARCH=x86_64 \
+	SHIM_VERSION="$version" \
+	SHIM_DOWNLOAD_LOG="$scoped_download_log" \
+	SHIM_CHECKSUM_LOG="$scoped_checksum_log" \
+	SHIM_REAL_HASH="$host_hash" \
+	SHIM_REAL_HASH_KIND="$host_hash_kind" \
+	BOTIFIED_VERSION="$version" \
+	BOTIFIED_INSTALL_DIR="$files_prefix/bin" \
+	BOTIFIED_SHARE_DIR="$files_prefix/share/botified" \
+	BOTIFIED_DOC_DIR="$files_prefix/share/doc/botified" \
+	"$host_sh" "$repo_root/install.sh" > "$scoped_output" 2>&1
+	files_status=$?
+	set -e
+	[ "$files_status" -eq 0 ] || {
+		printf 'not ok - %s: files-only run failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" "Checksum verified." "$case_name files-only"
+	[ -x "$files_prefix/bin/botified" ] || die "$case_name did not install botified"
+	[ -x "$files_prefix/bin/botified-tui" ] || die "$case_name did not install botified-tui"
+	[ -d "$files_prefix/share/botified/skills" ] || die "$case_name did not install skills"
+	[ -d "$files_prefix/share/doc/botified" ] || die "$case_name did not install docs"
+	[ ! -s "$scoped_download_log" ] || die "$case_name downloaded during files-only install"
+
+	prepare_gateway_case asset-dir-gateway
+	scoped_asset_dir=$fixture_dir
+	rm "$scoped_bin/curl"
+	invoke_scoped --scope user
+	scoped_asset_dir=
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: gateway run failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" "Checksum verified." "$case_name gateway"
+	[ -x "$gateway_wrapper_fs" ] || die "$case_name did not install the gateway wrapper"
+	[ -f "$gateway_config_fs" ] || die "$case_name did not place the channel config"
+	[ -f "$gateway_unit_fs" ] || die "$case_name did not render the channel unit"
+	assert_no_gateway_activation "$case_name gateway"
+	assert_contains "$scoped_checksum_log" sha256sum "$case_name gateway"
+	[ ! -s "$scoped_download_log" ] || die "$case_name downloaded the companion tarball"
+	say_ok "$case_name"
+}
+
+run_asset_dir_missing_file_case() {
+	case_name="asset dir missing file fails closed"
+	missing_asset_dir=$(make_incomplete_asset_dir missing-asset)
+
+	prepare_scoped_case asset-dir-missing-core user
+	scoped_asset_dir=$missing_asset_dir
+	invoke_scoped --scope user
+	scoped_asset_dir=
+	[ "$scoped_status" -ne 0 ] || die "$case_name installed with a missing core tarball"
+	assert_contains "$scoped_output" \
+		"BOTIFIED_ASSET_DIR is set but botified-core-linux-x86_64-musl.tar.gz is missing" \
+		"$case_name core"
+	[ ! -s "$scoped_download_log" ] ||
+		die "$case_name contacted the network for a missing core tarball"
+	assert_scoped_paths_absent "$case_name core" \
+		"$scoped_binary_fs" "$scoped_config_fs" "$scoped_env_fs" "$scoped_unit_fs"
+
+	prepare_gateway_case asset-dir-missing-gateway
+	scoped_asset_dir=$missing_asset_dir
+	invoke_scoped --scope user
+	scoped_asset_dir=
+	[ "$scoped_status" -ne 0 ] || die "$case_name installed with a missing companion tarball"
+	assert_contains "$scoped_output" \
+		"BOTIFIED_ASSET_DIR is set but botified-claw-gateway-companion.tar.gz is missing" \
+		"$case_name gateway"
+	[ ! -s "$scoped_download_log" ] ||
+		die "$case_name contacted the network for a missing companion tarball"
+	assert_scoped_paths_absent "$case_name gateway" \
+		"$gateway_wrapper_fs" "$gateway_config_fs" "$gateway_env_fs" "$gateway_unit_fs"
+
+	missing_manifest_dir=$(make_incomplete_asset_dir missing-manifest)
+	prepare_scoped_case asset-dir-missing-manifest user
+	scoped_asset_dir=$missing_manifest_dir
+	invoke_scoped --scope user
+	scoped_asset_dir=
+	[ "$scoped_status" -ne 0 ] || die "$case_name installed with a missing SHA256SUMS"
+	assert_contains "$scoped_output" \
+		"BOTIFIED_ASSET_DIR is set but SHA256SUMS is missing" "$case_name manifest"
+	[ ! -s "$scoped_download_log" ] ||
+		die "$case_name contacted the network for a missing SHA256SUMS"
+	assert_scoped_paths_absent "$case_name manifest" \
+		"$scoped_binary_fs" "$scoped_config_fs" "$scoped_env_fs" "$scoped_unit_fs"
+	say_ok "$case_name"
+}
+
 run_case "core Linux x86_64 prefers sha256sum via curl" install.sh Linux x86_64 curl both "$fixture_dir" success ""
 run_case "core Linux aarch64 via wget and sha256sum" install.sh Linux aarch64 wget sha256sum "$fixture_dir" success ""
 run_case "core warns when gateway needs a separate upgrade" install.sh Linux x86_64 curl sha256sum "$fixture_dir" success "" auto true
@@ -2751,5 +2896,8 @@ run_gateway_bundle_capability_case
 run_gateway_env_preservation_case
 run_gateway_interactive_case
 run_gateway_missing_manifest_case
+
+run_asset_dir_local_mode_case
+run_asset_dir_missing_file_case
 
 printf '1..%d\n' "$pass_count"
