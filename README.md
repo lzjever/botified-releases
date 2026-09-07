@@ -170,8 +170,10 @@ the canonical Core guide: [Transparent Manual Removal](https://github.com/lzjeve
 
 ## Install Gateway
 
-Gateway is a separate companion install. The Core installer does not install,
-configure, start, stop, or upgrade it; choose its service lifecycle separately.
+Gateway is a separate companion install with its own managed installer. It
+requires that Core is already installed as a managed service in the same
+scope, and Node `>=22.19 <23`. The Core installer does not install,
+configure, start, stop, or upgrade it.
 
 ```sh
 installer=$(mktemp)
@@ -179,31 +181,42 @@ trap 'rm -f "$installer"' EXIT
 curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
   -o "$installer" \
   https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh
-sh "$installer"
+sh "$installer" --scope user --channel weixin
+# Or, under the fixed system account:
+# sudo sh "$installer" --scope system --channel weixin
 ```
 
-Then configure the channel you need:
+`--channel` accepts `weixin`, `feishu`, or `matrix`, repeated or
+comma-separated, and defaults to `weixin`; each channel becomes one
+independent `botified-claw-gateway-<channel>.service` instance. With no
+arguments at all the installer asks interactively for the scope and channels.
+
+A first install places the wrapper, share trees, per-channel config
+skeletons, and units, but does not enable or start anything — the skeleton
+holds no credentials. The installer prints the activation steps; for Weixin:
 
 ```sh
 botified-claw-gateway setup \
   --channel weixin \
-  --botified-base-url http://127.0.0.1:17777 \
-  --service-key <botified-service-key>
-botified-claw-gateway login
-botified-claw-gateway serve
+  --config ~/.config/botified/gateway/weixin-gateway.yaml
+botified-claw-gateway login \
+  --config ~/.config/botified/gateway/weixin-gateway.yaml
+systemctl --user enable --now botified-claw-gateway-weixin.service
 ```
 
-For Feishu/Lark:
+`setup` prompts for missing values, including the Botified service key, and
+does not echo secrets; the flags remain the automation path
+(`setup --help`). For Feishu/Lark there is no login step:
 
 ```sh
 botified-claw-gateway setup \
   --channel feishu \
+  --config ~/.config/botified/gateway/feishu-gateway.yaml \
   --botified-base-url http://127.0.0.1:17777 \
-  --service-key <botified-service-key> \
   --feishu-app-id <app-id> \
   --feishu-app-secret <app-secret> \
   --feishu-domain feishu
-botified-claw-gateway serve
+systemctl --user enable --now botified-claw-gateway-feishu.service
 ```
 
 For Matrix, create an unencrypted direct room containing exactly the gateway
@@ -215,23 +228,29 @@ selects the bot MXID, so there is no separate bot ID setting:
 export MATRIX_ACCESS_TOKEN="<matrix-access-token>"
 botified-claw-gateway setup \
   --channel matrix \
+  --config ~/.config/botified/gateway/matrix-gateway.yaml \
   --botified-base-url http://127.0.0.1:17777 \
-  --service-key <botified-service-key> \
   --matrix-homeserver https://matrix.walayun.com \
   --matrix-allow-from "@trusted-user:matrix.walayun.com"
 unset MATRIX_ACCESS_TOKEN
-botified-claw-gateway serve
+systemctl --user enable --now botified-claw-gateway-matrix.service
 ```
 
 Matrix supports allowlisted text and standard media in manually joined,
 unencrypted direct rooms. It does not support groups, encrypted rooms, or
 automatic invitation acceptance.
 
+Under system scope the channel configs live in `/etc/botified/gateway/` with
+runtime data under `/var/lib/botified/gateway/<channel>/`; run `setup` and
+`login` through `sudo` and see the companion README for the ownership steps.
+Installer exit codes and upgrade semantics are documented in the Core guide's
+[Managed Install And Upgrade Semantics](https://github.com/lzjever/botified/blob/master/docs/install-upgrade.md#4-managed-install-and-upgrade-semantics).
+
 ## Upgrade A Core + Gateway Host
 
 Core and Gateway are separate installs. On a host that runs both, pin one
 release and rerun both downloaded installers from the directory that contains
-them:
+them, keeping the original scope and channels:
 
 ```sh
 VERSION=vX.Y.Z
@@ -240,8 +259,10 @@ BOTIFIED_VERSION="$VERSION" sh ./install.sh --scope user
 # Or, for a system-scope host:
 # sudo env BOTIFIED_VERSION="$VERSION" sh ./install.sh --scope system
 
-# Upgrade Gateway independently:
-BOTIFIED_VERSION="$VERSION" sh ./install-gateway.sh
+# Upgrade Gateway independently, with the same scope and channels:
+BOTIFIED_VERSION="$VERSION" sh ./install-gateway.sh --scope user --channel weixin
+# Or, for a system-scope host:
+# sudo env BOTIFIED_VERSION="$VERSION" sh ./install-gateway.sh --scope system --channel weixin
 
 botified --version
 botified-claw-gateway --version
@@ -250,6 +271,13 @@ botified-claw-gateway self-check
 
 The two version commands must report `${VERSION#v}`. The Core installer does
 not upgrade an existing Gateway; it prints a warning when it detects one.
+
+Upgrade Core first: its restart stops every enabled Gateway channel through
+`Requires=botified.service` and does not guarantee restarting them. Rerunning
+the Gateway installer afterwards recovers each enabled channel — it replaces
+the release files, restarts the channel unit, and proves the running
+process — or restart each channel unit manually with
+`systemctl [--user] restart botified-claw-gateway-<channel>.service`.
 
 ## Install A Specific Version
 
@@ -266,7 +294,9 @@ done
 BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install.sh" --scope user
 # For system scope instead:
 # sudo env BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install.sh" --scope system
-BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install-gateway.sh"
+BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install-gateway.sh" --scope user --channel weixin
+# For system scope instead:
+# sudo env BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install-gateway.sh" --scope system --channel weixin
 ```
 
 Replace `vX.Y.Z` with a published release tag. Versioned downloads use URLs
@@ -274,8 +304,10 @@ such as `https://github.com/lzjever/botified-releases/releases/download/vX.Y.Z/<
 
 ## Companion Default Paths and PATH
 
-Gateway and files-only Core default to the user-writable
-`~/.local` prefix. Managed Core uses the fixed scope paths documented above.
+User-scope Gateway and files-only Core use the user-writable `~/.local`
+prefix; system-scope Gateway and managed Core use the fixed scope paths
+documented above. A manually unpacked companion lives wherever you extracted
+it.
 
 Add the command directory to your shell startup file if it is not already on
 `PATH`:
@@ -286,19 +318,30 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ## Custom Companion Install Locations
 
-Gateway uses one prefix because its wrapper depends on matching
-`bin` and `share` directories:
+The Gateway installer is managed-only: it has no files-only form, and it
+rejects `BOTIFIED_PREFIX` — and Core's files-only destination overrides —
+before downloading. Gateway still uses one prefix because its wrapper depends
+on matching `bin` and `share` directories. For a custom prefix, download and
+verify the companion tarball from one pinned release and unpack it by hand:
 
 ```sh
-installer=$(mktemp)
-trap 'rm -f "$installer"' EXIT
-curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
-  -o "$installer" \
-  https://raw.githubusercontent.com/lzjever/botified-releases/main/install-gateway.sh
-BOTIFIED_PREFIX=/usr/local sh "$installer"
+VERSION=vX.Y.Z
+BASE="https://github.com/lzjever/botified-releases/releases/download/$VERSION"
+GATEWAY=botified-claw-gateway-companion.tar.gz
+
+curl -fL "$BASE/$GATEWAY" -o "$GATEWAY"
+curl -fL "$BASE/SHA256SUMS" -o SHA256SUMS
+grep "  $GATEWAY$" SHA256SUMS | sha256sum -c -
+
+mkdir -p /opt/botified-claw-gateway
+tar -xzf "$GATEWAY" -C /opt/botified-claw-gateway
+export PATH=/opt/botified-claw-gateway/bin:$PATH
+botified-claw-gateway self-check
 ```
 
 Use a directory your user can write to, or run with the required permissions.
+Such a deployment owns its own unit and lifecycle; the managed installer
+refuses custom units (exit 3).
 
 ## Verify
 
@@ -343,7 +386,6 @@ Each release publishes:
 - `botified-core-linux-x86_64-musl.tar.gz`
 - `botified-core-linux-aarch64-gnu.tar.gz`
 - `botified-claw-gateway-companion.tar.gz`
-- `botified-playground.tar.gz`
 - `SHA256SUMS`
 
 ## Playground For Developers
