@@ -425,6 +425,19 @@ commit_scoped_release() {
 	replace_scoped_tree "$bundle_dir/share/doc/botified" "$scope_docs_fs"
 }
 
+resolve_process_exe() {
+	resolve_pid=$1
+	resolve_attempts=0
+	while [ "$resolve_attempts" -lt 5 ]; do
+		if process_binary=$(readlink -f "/proc/$resolve_pid/exe") && [ -n "$process_binary" ]; then
+			return 0
+		fi
+		resolve_attempts=$((resolve_attempts + 1))
+		sleep 1
+	done
+	return 1
+}
+
 verify_scoped_runtime() {
 	enabled_state=$(scoped_systemctl is-enabled botified.service) || fail "botified.service is not enabled"
 	[ "$enabled_state" = enabled ] || fail "botified.service is not exactly enabled"
@@ -434,14 +447,14 @@ verify_scoped_runtime() {
 		fail "could not read botified.service MainPID"
 	is_decimal "$main_pid" && [ "$main_pid" -ne 0 ] || fail "botified.service has no stable MainPID"
 	command -v readlink >/dev/null 2>&1 || fail "readlink is required"
-	process_binary=$(readlink -f "/proc/$main_pid/exe") || fail "could not resolve botified.service executable"
+	resolve_process_exe "$main_pid" || fail "could not resolve botified.service executable"
 	[ "$process_binary" = "$scope_binary" ] || fail "botified.service is running the wrong executable"
 	"$scope_binary_fs" health check --config "$scope_config" --expected-pid "$main_pid" ||
 		fail "botified health check failed"
 	after_pid=$(scoped_systemctl show -p MainPID --value botified.service) ||
 		fail "could not reread botified.service MainPID"
 	[ "$after_pid" = "$main_pid" ] || fail "botified.service restarted during health check"
-	process_binary=$(readlink -f "/proc/$after_pid/exe") || fail "could not re-resolve botified.service executable"
+	resolve_process_exe "$after_pid" || fail "could not re-resolve botified.service executable"
 	[ "$process_binary" = "$scope_binary" ] || fail "botified.service executable changed during health check"
 	if [ "$managed_scope" = user ]; then
 		linger=$(loginctl show-user "$current_name" -p Linger --value) ||

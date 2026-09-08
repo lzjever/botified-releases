@@ -613,8 +613,15 @@ render_channel_unit() {
 
 read_channel_cmdline() {
 	cmdline_pid=$1
-	tr '\000' '\n' < "/proc/$cmdline_pid/cmdline" ||
-		proof_fail "could not read /proc/$cmdline_pid/cmdline"
+	cmdline_attempts=0
+	while [ "$cmdline_attempts" -lt 5 ]; do
+		if tr '\000' '\n' < "/proc/$cmdline_pid/cmdline"; then
+			return 0
+		fi
+		cmdline_attempts=$((cmdline_attempts + 1))
+		sleep 1
+	done
+	proof_fail "could not read /proc/$cmdline_pid/cmdline"
 }
 
 verify_channel_runtime() {
