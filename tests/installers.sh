@@ -2109,7 +2109,7 @@ run_gateway_upgrade_case() {
 	stop_gateway_cmdline_holder
 	[ "$scoped_status" -eq 4 ] ||
 		die "$case_name did not exit 4 for a forged command line (got $scoped_status)"
-	assert_contains "$scoped_output" "is not running the managed cli.js" "$case_name cmdline"
+	assert_contains "$scoped_output" "could not read a matching" "$case_name cmdline"
 	[ "$(grep -F -x -c "systemctl user restart $gateway_unit_name" "$scoped_action_log")" -eq 1 ] ||
 		die "$case_name did not restart before proving the command line"
 
