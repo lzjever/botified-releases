@@ -616,15 +616,15 @@ read_channel_cmdline() {
 	cmdline_cli_js=$2
 	cmdline_config=$3
 	cmdline_attempts=0
-	while [ "$cmdline_attempts" -lt 5 ]; do
+	while :; do
 		channel_cmdline=$(tr '\000' '\n' < "/proc/$cmdline_pid/cmdline") || channel_cmdline=""
 		if [ -n "$channel_cmdline" ] &&
 			printf '%s\n' "$channel_cmdline" | grep -qF -x -- "$cmdline_cli_js" &&
 			printf '%s\n' "$channel_cmdline" | grep -qF -x -- "$cmdline_config"; then
-			printf '%s\n' "$channel_cmdline"
 			return 0
 		fi
 		cmdline_attempts=$((cmdline_attempts + 1))
+		[ "$cmdline_attempts" -ge 5 ] && break
 		sleep 1
 	done
 	proof_fail "could not read a matching /proc/$cmdline_pid/cmdline"
@@ -645,14 +645,14 @@ verify_channel_runtime() {
 		proof_fail "could not read $verify_unit MainPID"
 	is_decimal "$main_pid" && [ "$main_pid" -ne 0 ] ||
 		proof_fail "$verify_unit has no stable MainPID"
-	channel_cmdline=$(read_channel_cmdline "$main_pid" "$verify_cli_js" "$verify_config") ||
+	read_channel_cmdline "$main_pid" "$verify_cli_js" "$verify_config" ||
 		proof_fail "could not read the $verify_unit process command line"
 	sleep 5
 	after_pid=$(scoped_systemctl show -p MainPID --value "$verify_unit") ||
 		proof_fail "could not reread $verify_unit MainPID"
 	[ "$after_pid" = "$main_pid" ] ||
 		proof_fail "$verify_unit restarted during runtime verification"
-	after_cmdline=$(read_channel_cmdline "$after_pid" "$verify_cli_js" "$verify_config") ||
+	read_channel_cmdline "$after_pid" "$verify_cli_js" "$verify_config" ||
 		proof_fail "could not reread the $verify_unit process command line"
 	if [ "$managed_scope" = system ]; then
 		command -v stat >/dev/null 2>&1 || fail "stat is required"

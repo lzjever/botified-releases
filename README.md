@@ -385,8 +385,11 @@ botified-tui --help
 botified-claw-gateway self-check
 ```
 
-Checksums are published in each release as `SHA256SUMS`. Before extracting or
-executing a downloaded bundle, every installer verifies its exact asset entry.
+Checksums are published in each release as `SHA256SUMS`. Before extracting a
+downloaded tarball, every installer verifies its exact asset entry. In the
+offline bundle the three installer scripts are executed directly; each child
+installer then verifies the tarball checksums against the bundled `SHA256SUMS`
+before placing anything.
 It prefers `sha256sum` and falls back to `shasum -a 256`; installation fails if
 neither command is available or if the entry is missing, duplicated, malformed,
 or does not match the downloaded file.

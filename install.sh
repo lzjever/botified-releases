@@ -429,15 +429,15 @@ resolve_process_exe() {
 	resolve_pid=$1
 	resolve_expected=$2
 	resolve_attempts=0
-	while [ "$resolve_attempts" -lt 5 ]; do
+	while :; do
 		if process_binary=$(readlink -f "/proc/$resolve_pid/exe") &&
 			[ "$process_binary" = "$resolve_expected" ]; then
 			return 0
 		fi
 		resolve_attempts=$((resolve_attempts + 1))
+		[ "$resolve_attempts" -ge 5 ] && return 1
 		sleep 1
 	done
-	return 1
 }
 
 verify_scoped_runtime() {

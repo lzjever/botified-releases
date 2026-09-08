@@ -336,9 +336,6 @@ esac
 case "$asset" in
 	*/*|'') printf 'unexpected asset URL: %s\n' "$url" >&2; exit 94 ;;
 esac
-if [ "${SHIM_HTTP_404_ASSET:-}" = "$asset" ]; then
-	exit 22
-fi
 cp "$SHIM_FIXTURE_DIR/$asset" "$out"
 EOF
 
@@ -676,7 +673,6 @@ run_case() {
 	SHIM_CHECKSUM_LOG="$checksum_log" \
 	SHIM_REAL_HASH="$host_hash" \
 	SHIM_REAL_HASH_KIND="$host_hash_kind" \
-	SHIM_HTTP_404_ASSET="${HTTP_404_ASSET:-}" \
 	BOTIFIED_VERSION="$version" \
 	BOTIFIED_INSTALL_DIR="$prefix/bin" \
 	BOTIFIED_SHARE_DIR="$prefix/share/botified" \
@@ -717,9 +713,7 @@ run_case() {
 	fi
 
 	assert_contains "$download_log" "$downloader https://github.com/lzjever/botified-releases/releases/download/$version/$asset" "$case_name"
-	if [ "${HTTP_404_ASSET:-}" != "$asset" ]; then
-		assert_contains "$download_log" "$downloader https://github.com/lzjever/botified-releases/releases/download/$version/SHA256SUMS" "$case_name"
-	fi
+	assert_contains "$download_log" "$downloader https://github.com/lzjever/botified-releases/releases/download/$version/SHA256SUMS" "$case_name"
 	if [ "$expected_status" = success ]; then
 		case "$checksum_tool" in
 			sha256sum) assert_contains "$checksum_log" sha256sum "$case_name" ;;
@@ -736,7 +730,6 @@ run_case() {
 	if [ "$expected_checksum" = not-called ]; then
 		[ ! -s "$checksum_log" ] || die "$case_name ran a checksum tool before rejecting the manifest digest"
 	fi
-	HTTP_404_ASSET=
 	say_ok "$case_name"
 }
 
