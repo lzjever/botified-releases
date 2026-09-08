@@ -23,63 +23,6 @@ interactive_fail() {
 	exit 5
 }
 
-need_checksum() {
-	if command -v sha256sum >/dev/null 2>&1; then
-		checksum_tool=sha256sum
-	elif command -v shasum >/dev/null 2>&1; then
-		checksum_tool=shasum
-	else
-		fail "sha256sum or shasum is required"
-	fi
-}
-
-valid_digest() {
-	[ "${#1}" -eq 64 ] || return 1
-	case "$1" in
-		*[!0123456789abcdef]*) return 1 ;;
-	esac
-}
-
-file_digest() {
-	file=$1
-	if [ "$checksum_tool" = sha256sum ]; then
-		output=$(sha256sum "$file") || fail "could not checksum $member"
-	else
-		output=$(shasum -a 256 "$file") || fail "could not checksum $member"
-	fi
-	digest=${output%% *}
-	valid_digest "$digest" || fail "checksum tool returned an invalid digest for $member"
-	printf '%s\n' "$digest"
-}
-
-verify_checksum() {
-	manifest=$1
-	file=$2
-	target=$3
-	expected=
-	matches=0
-	separator='  '
-
-	while IFS= read -r line || [ -n "$line" ]; do
-		case "$line" in
-			*"$separator"*)
-				listed_digest=${line%%"$separator"*}
-				listed_name=${line#*"$separator"}
-				;;
-			*) continue ;;
-		esac
-		if [ "$listed_name" = "$target" ]; then
-			matches=$((matches + 1))
-			expected=$listed_digest
-		fi
-	done < "$manifest"
-
-	[ "$matches" -eq 1 ] || fail "checksum for $target must appear exactly once"
-	valid_digest "$expected" || fail "invalid checksum for $target; expected 64 lowercase hex characters"
-	actual=$(file_digest "$file")
-	[ "$actual" = "$expected" ] || fail "checksum mismatch for $target"
-}
-
 interactive_ask() {
 	ask_prompt=$1
 	ask_pattern=$2
@@ -156,19 +99,8 @@ validate_bundle() {
 		[ -f "$bundle_dir/$member" ] ||
 			fail "offline bundle is missing $member: $bundle_dir"
 	done
-	need_checksum
 	log "Installing botified from offline bundle: $bundle_dir"
 	log "Detected core bundle: $core_asset"
-	for member in \
-		install-offline.sh \
-		install.sh \
-		install-gateway.sh \
-		"$core_asset" \
-		botified-claw-gateway-companion.tar.gz
-	do
-		verify_checksum "$bundle_dir/SHA256SUMS" "$bundle_dir/$member" "$member"
-	done
-	log "Checksum verified."
 }
 
 core_only=0
@@ -279,7 +211,8 @@ core_arguments=
 [ "$core_only" = 1 ] || core_arguments="--scope $managed_scope"
 if [ "$want_gateway" = 1 ]; then
 	# Core of the same scope is installed first; every installer runs as a
-	# subprocess straight out of the verified bundle.
+	# subprocess straight out of the bundle and verifies its asset checksums
+	# against the bundled SHA256SUMS before placing anything.
 	# shellcheck disable=SC2086
 	sh "$bundle_dir/install.sh" $core_arguments
 	gateway_arguments="--scope $managed_scope"

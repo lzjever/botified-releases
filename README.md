@@ -315,9 +315,10 @@ For an air-gapped host, download the aggregate bundle for its architecture —
 `botified-offline-linux-aarch64-gnu.tar.gz` — and move it to the host with any
 offline medium. The bundle carries `install-offline.sh`, `install.sh`,
 `install-gateway.sh`, the matching core and gateway companion tarballs,
-`SHA256SUMS`, and `INSTALLER-SOURCE`. The orchestrator verifies every member
-against the bundled checksums before installing anything, then runs the same
-installers as the online entries — nothing is downloaded:
+`SHA256SUMS`, and `INSTALLER-SOURCE`. The orchestrator checks that every
+member is present, then runs the same installers as the online entries —
+each installer verifies its asset checksums against the bundled `SHA256SUMS`
+before placing anything, and nothing is downloaded:
 
 ```sh
 mkdir botified-offline

@@ -2480,8 +2480,11 @@ run_offline_bundle_integrity_case() {
 	invoke_scoped --core-only --bundle-dir "$tampered_bundle"
 	[ "$scoped_status" -eq 1 ] ||
 		die "$case_name did not exit 1 for a tampered member (got $scoped_status)"
+	# Checksum ownership: the child installer rejects the tampered core asset
+	# during its own verification stage, before placing anything.
 	assert_contains "$scoped_output" \
-		'checksum mismatch for botified-core-linux-x86_64-musl.tar.gz' "$case_name tampered"
+		'botified install: checksum mismatch for botified-core-linux-x86_64-musl.tar.gz' \
+		"$case_name tampered"
 	assert_no_scoped_side_effects "$case_name tampered"
 	assert_scoped_paths_absent "$case_name tampered" \
 		"$scoped_binary_fs" "$scoped_config_fs" "$scoped_env_fs" "$scoped_unit_fs"
