@@ -954,6 +954,7 @@ prepare_scoped_case() {
 	scoped_asset_dir=
 	scoped_umask=0022
 	scoped_script=install.sh
+	scoped_version=$version
 	scoped_expected_binary_fs=$scoped_binary_fs
 	scoped_expected_unit_fs=$scoped_unit_fs
 	scoped_expected_release_marker='fixture core release v9.8.7'
@@ -1061,7 +1062,7 @@ invoke_scoped() {
 			SHIM_REAL_READLINK="$host_readlink" \
 			SHIM_REAL_REALPATH="$host_realpath" \
 			SHIM_REAL_STAT="$host_stat" \
-			BOTIFIED_VERSION="$version"
+			BOTIFIED_VERSION="$scoped_version"
 		"$host_sh" "$repo_root/$scoped_script" "$@"
 	) > "$scoped_output" 2>&1
 	scoped_status=$?
@@ -2422,7 +2423,7 @@ run_asset_dir_missing_file_case() {
 make_offline_bundle() {
 	offline_variant=${1:-intact}
 	case "$offline_variant" in
-		intact|tampered|missing-member) ;;
+		intact|tampered|missing-member|no-version) ;;
 		*) die "unknown offline bundle variant $offline_variant" ;;
 	esac
 	offline_dir="$tmp_root/offline-bundles/$offline_variant"
@@ -2436,6 +2437,11 @@ make_offline_bundle() {
 	cp "$fixture_dir/botified-claw-gateway-companion.tar.gz" \
 		"$offline_dir/botified-claw-gateway-companion.tar.gz"
 	printf '%s\n' 0123456789abcdef0123456789abcdef01234567 > "$offline_dir/INSTALLER-SOURCE"
+	if [ "$offline_variant" != no-version ]; then
+		# Matches the packaging side: VERSION is metadata beside
+		# INSTALLER-SOURCE and is not covered by the inner SHA256SUMS.
+		printf '%s\n' "$version" > "$offline_dir/VERSION"
+	fi
 	: > "$offline_dir/SHA256SUMS"
 	for offline_member in \
 		install-offline.sh \
@@ -2654,6 +2660,132 @@ run_offline_interactive_case() {
 	say_ok "$case_name"
 }
 
+invoke_offline_core_only() {
+	# Runs install-offline.sh --core-only in an inline subshell so the
+	# outer harness never injects BOTIFIED_VERSION implicitly; an empty
+	# offline_case_version leaves it unset (mirror of the
+	# run_offline_core_only_case pattern).
+	offline_files_prefix="$scoped_root/files-only"
+	set +e
+	(
+		unset BOTIFIED_INSTALL_TEST_MODE BOTIFIED_INSTALL_TEST_ROOT BOTIFIED_ASSET_DIR
+		if [ -n "${offline_case_version:-}" ]; then
+			BOTIFIED_VERSION=$offline_case_version
+			export BOTIFIED_VERSION
+		else
+			unset BOTIFIED_VERSION
+		fi
+		export \
+			PATH="$scoped_bin:$base_bin" \
+			HOME="$scoped_home" \
+			SHIM_OS=Linux \
+			SHIM_ARCH=x86_64 \
+			SHIM_ACTION_LOG="$scoped_action_log" \
+			SHIM_DOWNLOAD_LOG="$scoped_download_log" \
+			SHIM_CHECKSUM_LOG="$scoped_checksum_log" \
+			SHIM_REAL_HASH="$host_hash" \
+			SHIM_REAL_HASH_KIND="$host_hash_kind" \
+			BOTIFIED_INSTALL_DIR="$offline_files_prefix/bin" \
+			BOTIFIED_SHARE_DIR="$offline_files_prefix/share/botified" \
+			BOTIFIED_DOC_DIR="$offline_files_prefix/share/doc/botified"
+		"$host_sh" "$repo_root/install-offline.sh" --core-only --bundle-dir "$offline_case_bundle"
+	) > "$scoped_output" 2>&1
+	offline_case_status=$?
+	set -e
+}
+
+run_offline_bundle_version_case() {
+	case_name="offline bundle version propagates as default"
+	offline_case_bundle=$(make_offline_bundle intact)
+	prepare_offline_case version-default
+	offline_case_version=
+	invoke_offline_core_only
+	[ "$offline_case_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" \
+		"Installing botified from lzjever/botified-releases ($version)" "$case_name"
+	if grep -F 'Installing botified from lzjever/botified-releases (latest)' \
+		"$scoped_output" >/dev/null 2>&1
+	then
+		die "$case_name child installer ignored the bundled VERSION"
+	fi
+	say_ok "$case_name"
+
+	case_name="offline explicit BOTIFIED_VERSION wins over bundle"
+	prepare_offline_case version-explicit
+	offline_case_version=v0.4.57
+	invoke_offline_core_only
+	[ "$offline_case_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" \
+		'Installing botified from lzjever/botified-releases (v0.4.57)' "$case_name"
+	if grep -F "Installing botified from lzjever/botified-releases ($version)" \
+		"$scoped_output" >/dev/null 2>&1
+	then
+		die "$case_name explicit env lost to the bundled VERSION"
+	fi
+	say_ok "$case_name"
+
+	case_name="offline bundle without version degrades without failing"
+	offline_case_bundle=$(make_offline_bundle no-version)
+	prepare_offline_case version-degrade
+	offline_case_version=
+	invoke_offline_core_only
+	[ "$offline_case_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" \
+		'offline bundle carries no VERSION and BOTIFIED_VERSION is unset; the installers run without a version pin' \
+		"$case_name"
+	assert_contains "$scoped_output" \
+		'Installing botified from lzjever/botified-releases (latest)' "$case_name"
+	say_ok "$case_name"
+}
+
+run_gateway_core_version_echo_case() {
+	case_name="gateway preflight warns on core version mismatch"
+	prepare_gateway_case version-echo
+	mkdir -p "${scoped_binary_fs%/*}"
+	printf '#!/bin/sh\nprintf "botified 9.8.6\\n"\n' > "$scoped_binary_fs"
+	chmod 0755 "$scoped_binary_fs"
+	invoke_scoped --scope user
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" \
+		"botified gateway install: warning: installed Core reports version 9.8.6 but this installer pins $version; rerun install.sh --scope user with BOTIFIED_VERSION=$version to align Core first" \
+		"$case_name mismatch"
+
+	prepare_gateway_case version-echo-latest
+	mkdir -p "${scoped_binary_fs%/*}"
+	printf '#!/bin/sh\nprintf "botified 9.8.6\\n"\n' > "$scoped_binary_fs"
+	chmod 0755 "$scoped_binary_fs"
+	scoped_version=latest
+	scoped_asset_dir=$fixture_dir
+	invoke_scoped --scope user
+	scoped_asset_dir=
+	scoped_version=$version
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: latest pin run failed\n' "$case_name" >&2
+		sed -n '1,200p' "$scoped_output" >&2
+		exit 1
+	}
+	if grep -F 'warning: installed Core reports version' "$scoped_output" >/dev/null 2>&1; then
+		die "$case_name warned under a latest pin"
+	fi
+	say_ok "$case_name"
+}
+
 run_managed_gateway_stop_warning_case() {
 	case_name="managed upgrade warns about stopped enabled gateway channels"
 	prepare_scoped_case gateway-stop-warning user
@@ -2843,6 +2975,7 @@ run_gateway_bundle_capability_case
 run_gateway_env_preservation_case
 run_gateway_interactive_case
 run_gateway_missing_manifest_case
+run_gateway_core_version_echo_case
 
 run_asset_dir_local_mode_case
 run_asset_dir_missing_file_case
@@ -2853,6 +2986,7 @@ run_offline_scope_case
 run_offline_gateway_requires_scope_case
 run_offline_gateway_order_case
 run_offline_interactive_case
+run_offline_bundle_version_case
 
 run_managed_gateway_stop_warning_case
 

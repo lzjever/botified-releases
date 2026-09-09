@@ -204,6 +204,18 @@ fi
 
 validate_bundle
 
+# The bundled VERSION is a fallback default only: an explicit
+# BOTIFIED_VERSION in the environment always wins, and bundles that
+# predate VERSION install without one (propagation is skipped with a
+# single degradation line; VERSION is deliberately not a required
+# validate_bundle member).
+BOTIFIED_VERSION="${BOTIFIED_VERSION:-$(cat "$bundle_dir/VERSION" 2>/dev/null || true)}"
+if [ -n "${BOTIFIED_VERSION:-}" ]; then
+	export BOTIFIED_VERSION
+else
+	log "offline bundle carries no VERSION and BOTIFIED_VERSION is unset; the installers run without a version pin"
+fi
+
 BOTIFIED_ASSET_DIR=$bundle_dir
 export BOTIFIED_ASSET_DIR
 

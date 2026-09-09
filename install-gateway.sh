@@ -26,6 +26,10 @@ usage_fail() {
 	exit 2
 }
 
+warn() {
+	printf 'botified gateway install: warning: %s\n' "$*" >&2
+}
+
 refuse() {
 	printf 'botified gateway install: %s\n' "$*" >&2
 	exit 3
@@ -301,6 +305,7 @@ EOF
 set_scoped_layout() {
 	if [ "$managed_scope" = user ]; then
 		scope_home=$canonical_nss_home
+		core_binary="$scope_home/.local/bin/botified"
 		gateway_binary="$scope_home/.local/bin/botified-claw-gateway"
 		runtime_tree="$scope_home/.local/share/botified/gateway"
 		docs_tree="$scope_home/.local/share/doc/botified-claw-gateway"
@@ -310,6 +315,7 @@ set_scoped_layout() {
 		data_root="$scope_home/.local/state/botified/gateway"
 		core_unit="$scope_home/.config/systemd/user/botified.service"
 	else
+		core_binary=/usr/local/bin/botified
 		gateway_binary=/usr/local/bin/botified-claw-gateway
 		runtime_tree=/usr/local/share/botified/gateway
 		docs_tree=/usr/local/share/doc/botified-claw-gateway
@@ -319,6 +325,7 @@ set_scoped_layout() {
 		data_root=/var/lib/botified/gateway
 		core_unit=/etc/systemd/system/botified.service
 	fi
+	core_binary_fs=$(scoped_fs_path "$core_binary")
 	gateway_binary_fs=$(scoped_fs_path "$gateway_binary")
 	runtime_tree_fs=$(scoped_fs_path "$runtime_tree")
 	docs_tree_fs=$(scoped_fs_path "$docs_tree")
@@ -405,6 +412,24 @@ branch_for_channel() {
 	return 1
 }
 
+warn_core_version_mismatch() {
+	# The installed Core binary is authoritative for what runs on the host.
+	# Compare it against the pinned release and warn on disagreement —
+	# never fail — because Core and Gateway companions ship as one release
+	# but stay independently installed. `latest` pins carry nothing to
+	# compare against, and a missing or non-executable Core binary is left
+	# to the checks that own it.
+	if [ "$version" = latest ]; then
+		return 0
+	fi
+	[ -x "$core_binary_fs" ] || return 0
+	core_version=$("$core_binary_fs" --version 2>/dev/null) || core_version=
+	core_version=${core_version#botified }
+	if [ -n "$core_version" ] && [ "$core_version" != "${version#v}" ]; then
+		warn "installed Core reports version $core_version but this installer pins $version; rerun install.sh --scope $managed_scope with BOTIFIED_VERSION=$version to align Core first"
+	fi
+}
+
 scoped_preflight() {
 	[ "$install_dir_is_set" != x ] && [ "$share_dir_is_set" != x ] &&
 		[ "$doc_dir_is_set" != x ] && [ "$prefix_is_set" != x ] ||
@@ -441,6 +466,7 @@ scoped_preflight() {
 	fi
 	has_managed_unit_marker "$core_unit_fs" ||
 		fail "Core unit is not managed by the Botified installer: $core_unit; run install.sh --scope $managed_scope first"
+	warn_core_version_mismatch
 	lifecycle_channels=
 	lifecycle_branches=
 	previous_ifs=$IFS

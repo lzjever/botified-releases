@@ -422,6 +422,9 @@ BOTIFIED_VERSION=vX.Y.Z sh "$installer_dir/install-gateway.sh" --scope user --ch
 
 Replace `vX.Y.Z` with a published release tag. Versioned downloads use URLs
 such as `https://github.com/lzjever/botified-releases/releases/download/vX.Y.Z/<asset>`.
+The downloaded installers can be kept and reused: rerunning one with a
+different `BOTIFIED_VERSION` upgrades in place, as shown in
+Upgrade A Core + Gateway Host.
 
 ## Install Fully Offline
 
@@ -430,10 +433,13 @@ For an air-gapped host, download the aggregate bundle for its architecture —
 `botified-offline-linux-aarch64-gnu.tar.gz` — and move it to the host with any
 offline medium. The bundle carries `install-offline.sh`, `install.sh`,
 `install-gateway.sh`, the matching core and gateway companion tarballs,
-`SHA256SUMS`, and `INSTALLER-SOURCE`. The orchestrator checks that every
-member is present, then runs the same installers as the online entries —
-each installer verifies its asset checksums against the bundled `SHA256SUMS`
-before placing anything, and nothing is downloaded:
+`SHA256SUMS`, `INSTALLER-SOURCE`, and `VERSION`. `VERSION` holds the release
+tag the payloads were built from and becomes the default `BOTIFIED_VERSION`
+for the bundled installers; an explicit `BOTIFIED_VERSION` still wins, and
+older bundles without `VERSION` install fine without one. The orchestrator
+checks that every required member is present, then runs the same installers
+as the online entries — each installer verifies its asset checksums against
+the bundled `SHA256SUMS` before placing anything, and nothing is downloaded:
 
 ```sh
 mkdir botified-offline
