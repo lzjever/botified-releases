@@ -206,7 +206,8 @@ set_scoped_layout() {
 		scope_config="$scope_home/.config/botified/botified.yaml"
 		scope_env="$scope_home/.config/botified/botified.env"
 		scope_workspace="$scope_home/.local/share/botified/workspace"
-		scope_unit="$scope_home/.config/systemd/user/botified.service"
+		scope_unit_dir="$scope_home/.config/systemd/user"
+		scope_unit="$scope_unit_dir/botified.service"
 		scope_unit_source=botified.user.service
 		scope_boot_target=default.target
 	else
@@ -218,7 +219,8 @@ set_scoped_layout() {
 		scope_config=/etc/botified/botified.yaml
 		scope_env=/etc/botified/botified.env
 		scope_workspace=/var/lib/botified/workspace
-		scope_unit=/etc/systemd/system/botified.service
+		scope_unit_dir=/etc/systemd/system
+		scope_unit="$scope_unit_dir/botified.service"
 		scope_unit_source=botified.system.service
 		scope_boot_target=multi-user.target
 	fi
@@ -232,6 +234,7 @@ set_scoped_layout() {
 	scope_env_fs=$(scoped_fs_path "$scope_env")
 	scope_workspace_fs=$(scoped_fs_path "$scope_workspace")
 	scope_unit_fs=$(scoped_fs_path "$scope_unit")
+	scope_unit_dir_fs=$(scoped_fs_path "$scope_unit_dir")
 }
 
 scoped_preflight() {
@@ -470,6 +473,29 @@ verify_scoped_runtime() {
 	fi
 }
 
+warn_gateway_channels() {
+	warn_gateway_matches=
+	for warn_gateway_unit_fs in "$scope_unit_dir_fs"/botified-claw-gateway-*.service; do
+		[ -f "$warn_gateway_unit_fs" ] || continue
+		has_managed_unit_marker "$warn_gateway_unit_fs" || continue
+		warn_gateway_unit=${warn_gateway_unit_fs##*/}
+		warn_gateway_state=$(scoped_systemctl is-enabled "$warn_gateway_unit") ||
+			warn_gateway_state=
+		[ "$warn_gateway_state" = enabled ] || continue
+		warn_gateway_matches="${warn_gateway_matches:+$warn_gateway_matches }$warn_gateway_unit"
+	done
+	[ -n "$warn_gateway_matches" ] || return 0
+	log "botified install: warning: this Core restart stopped the following enabled Gateway channel unit(s); they do not restart automatically:"
+	for warn_gateway_unit in $warn_gateway_matches; do
+		log "  $warn_gateway_unit"
+		if [ "$managed_scope" = user ]; then
+			log "    systemctl --user restart $warn_gateway_unit"
+		else
+			log "    systemctl restart $warn_gateway_unit"
+		fi
+	done
+}
+
 install_scoped() {
 	scoped_preflight
 	os=$(uname -s 2>/dev/null || true)
@@ -536,6 +562,7 @@ install_scoped() {
 	log "  $scope_binary config check --config $scope_config"
 	log "  $scope_binary health check --config $scope_config"
 	log "Provider configuration is intentionally left for the administrator."
+	warn_gateway_channels
 }
 
 managed_scope=

@@ -2654,6 +2654,79 @@ run_offline_interactive_case() {
 	say_ok "$case_name"
 }
 
+run_managed_gateway_stop_warning_case() {
+	case_name="managed upgrade warns about stopped enabled gateway channels"
+	prepare_scoped_case gateway-stop-warning user
+	scoped_unit_dir_fs="$scoped_test_root$scoped_home/.config/systemd/user"
+	mkdir -p "$scoped_unit_dir_fs"
+	printf '# Managed by the Botified installer. Inspect and operate with systemd tools.\n[Unit]\nDescription=seeded enabled gateway channel\n' \
+		> "$scoped_unit_dir_fs/botified-claw-gateway-weixin.service"
+	printf '# Managed by the Botified installer. Inspect and operate with systemd tools.\n[Unit]\nDescription=seeded deferred gateway channel\n' \
+		> "$scoped_unit_dir_fs/botified-claw-gateway-feishu.service"
+	set_scoped_unit_state botified-claw-gateway-weixin.service is-enabled enabled
+	set_scoped_unit_state botified-claw-gateway-feishu.service is-enabled disabled
+	invoke_scoped --scope user
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: scoped run failed\n' "$case_name" >&2
+		sed -n '1,240p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" 'Installed managed user service: botified.service' \
+		"$case_name scoped"
+	assert_contains "$scoped_output" \
+		'botified install: warning: this Core restart stopped the following enabled Gateway channel unit(s); they do not restart automatically:' \
+		"$case_name scoped"
+	assert_contains "$scoped_output" '  botified-claw-gateway-weixin.service' \
+		"$case_name scoped"
+	assert_contains "$scoped_output" \
+		'  systemctl --user restart botified-claw-gateway-weixin.service' \
+		"$case_name scoped"
+	if grep -F 'botified-claw-gateway-feishu' "$scoped_output" >/dev/null 2>&1; then
+		die "$case_name warned about a channel that is not enabled"
+	fi
+	assert_contains "$scoped_action_log" \
+		'systemctl user is-enabled botified-claw-gateway-weixin.service' \
+		"$case_name scoped"
+	assert_contains "$scoped_action_log" \
+		'systemctl user is-enabled botified-claw-gateway-feishu.service' \
+		"$case_name scoped"
+
+	prepare_scoped_case gateway-stop-warning-clean user
+	invoke_scoped --scope user
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: clean run failed\n' "$case_name" >&2
+		sed -n '1,240p' "$scoped_output" >&2
+		exit 1
+	}
+	if grep -F 'stopped the following enabled Gateway channel' "$scoped_output" >/dev/null 2>&1; then
+		die "$case_name warned without managed gateway channels"
+	fi
+	if grep -E 'systemctl user is-enabled botified-claw-gateway-' \
+		"$scoped_action_log" >/dev/null 2>&1; then
+		die "$case_name probed gateway channels without managed units"
+	fi
+
+	offline_stop_warning_bundle=$(make_offline_bundle intact)
+	prepare_offline_case gateway-stop-warning
+	scoped_unit_dir_fs="$scoped_test_root$scoped_home/.config/systemd/user"
+	mkdir -p "$scoped_unit_dir_fs"
+	printf '# Managed by the Botified installer. Inspect and operate with systemd tools.\n[Unit]\nDescription=seeded enabled gateway channel\n' \
+		> "$scoped_unit_dir_fs/botified-claw-gateway-weixin.service"
+	set_scoped_unit_state botified-claw-gateway-weixin.service is-enabled enabled
+	invoke_scoped --scope user --bundle-dir "$offline_stop_warning_bundle"
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: offline run failed\n' "$case_name" >&2
+		sed -n '1,240p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" \
+		'botified install: warning: this Core restart stopped the following enabled Gateway channel unit(s); they do not restart automatically:' \
+		"$case_name offline"
+	assert_contains "$scoped_output" '  botified-claw-gateway-weixin.service' \
+		"$case_name offline"
+	say_ok "$case_name"
+}
+
 run_case "core Linux x86_64 prefers sha256sum via curl" install.sh Linux x86_64 curl both "$fixture_dir" success ""
 run_case "core Linux aarch64 via wget and sha256sum" install.sh Linux aarch64 wget sha256sum "$fixture_dir" success ""
 run_case "core warns when gateway needs a separate upgrade" install.sh Linux x86_64 curl sha256sum "$fixture_dir" success "" auto true
@@ -2712,5 +2785,7 @@ run_offline_scope_case
 run_offline_gateway_requires_scope_case
 run_offline_gateway_order_case
 run_offline_interactive_case
+
+run_managed_gateway_stop_warning_case
 
 printf '1..%d\n' "$pass_count"
