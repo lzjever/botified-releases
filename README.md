@@ -18,6 +18,121 @@ channels require an already running managed Core service in the same scope.
 
 Install only what you need. The core installer does not install gateway.
 
+## Fast path: Core user-scope + Weixin Gateway
+
+One page from a fresh Linux host to a running Weixin channel as a user-scope
+managed install, using the two managed installers. Commands assume
+`$HOME/.local/bin` is on `PATH` ([Companion Default Paths and
+PATH](#companion-default-paths-and-path)). This is an orchestration of
+commands documented in the sections below; each step links to its canonical
+section for details and constraints.
+
+1. Check the Linger prerequisite for a user-scope managed Core:
+
+   ```sh
+   loginctl show-user "$USER" -p Linger --value
+   ```
+
+   The result must be exactly `yes`; if not, see
+   [Managed User Service](#managed-user-service) before installing.
+
+2. Download and inspect both installers:
+
+   ```sh
+   installer_dir=$(mktemp -d)
+   trap 'rm -rf "$installer_dir"' EXIT
+   for component in install install-gateway; do
+     curl -fL --retry 3 --retry-all-errors --connect-timeout 15 --silent --show-error \
+       -o "$installer_dir/$component.sh" \
+       "https://raw.githubusercontent.com/lzjever/botified-releases/main/$component.sh"
+   done
+   less "$installer_dir/install.sh" "$installer_dir/install-gateway.sh"
+   ```
+
+   Canonical download recipe:
+   [Install A Specific Version](#install-a-specific-version).
+
+3. Install the managed user-scope Core service:
+
+   ```sh
+   sh "$installer_dir/install.sh" --scope user
+   ```
+
+   Canonical: [Managed User Service](#managed-user-service).
+
+4. Configure a real provider and the service key environment variable name
+   with the guided Core setup (interactive; requires Core v0.4.58+):
+
+   ```sh
+   botified setup --config ~/.config/botified/botified.yaml --workspace ~/.local/share/botified/workspace --overwrite
+   ```
+
+   Canonical: the Core operations manual's
+   [CLI reference](https://github.com/lzjever/botified/blob/master/docs/ops-manual.md#3-cli-reference).
+
+5. Write the chosen service key value into the Core environment file and
+   restart Core:
+
+   ```sh
+   echo 'BOTIFIED_SERVICE_KEY=<choose-a-token>' >> ~/.config/botified/botified.env
+   systemctl --user restart botified.service
+   ```
+
+   If step 4 customized the service key variable name in the wizard, use that
+   name here. Canonical: the Core operations manual's
+   [Managed Environment File](https://github.com/lzjever/botified/blob/master/docs/ops-manual.md#managed-environment-file).
+
+6. Install the Weixin Gateway channel (requires Node `>=22.19 <23`):
+
+   ```sh
+   sh "$installer_dir/install-gateway.sh" --scope user --channel weixin
+   ```
+
+   Canonical: [Install Gateway](#install-gateway).
+
+7. Create the channel config; when `setup` prompts for the Botified service
+   key, type the same value written in step 5:
+
+   ```sh
+   botified-claw-gateway setup \
+     --channel weixin \
+     --config ~/.config/botified/gateway/weixin-gateway.yaml
+   ```
+
+   Canonical: [Install Gateway](#install-gateway) and the companion README's
+   [Managed Install](https://github.com/lzjever/botified/blob/master/botified-claw-gateway/README.md#managed-install-recommended).
+
+8. Run the Weixin QR login with the same config:
+
+   ```sh
+   botified-claw-gateway login \
+     --config ~/.config/botified/gateway/weixin-gateway.yaml
+   ```
+
+   Canonical: [Install Gateway](#install-gateway); the QR login mechanics are
+   the companion README's
+   [Weixin Quickstart](https://github.com/lzjever/botified/blob/master/botified-claw-gateway/README.md#weixin-quickstart).
+
+9. Enable and start the channel unit:
+
+   ```sh
+   systemctl --user enable --now botified-claw-gateway-weixin.service
+   ```
+
+   Canonical: [Install Gateway](#install-gateway).
+
+10. Verify the running service end to end:
+
+    ```sh
+    BASE=http://127.0.0.1:17777
+    curl -s "$BASE/healthz"
+    curl -s "$BASE/v1/state" -H "Authorization: Bearer <choose-a-token>"
+    ```
+
+    Canonical: [Quick Service Testing](#quick-service-testing); sending a
+    direct Weixin message to the logged-in account completes the channel-side
+    check ([Weixin Quickstart](https://github.com/lzjever/botified/blob/master/botified-claw-gateway/README.md#weixin-quickstart)).
+
 ## Install Core
 
 The Core installer supports Linux x86_64 and aarch64. Download and inspect the
