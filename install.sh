@@ -485,7 +485,7 @@ warn_gateway_channels() {
 		warn_gateway_matches="${warn_gateway_matches:+$warn_gateway_matches }$warn_gateway_unit"
 	done
 	[ -n "$warn_gateway_matches" ] || return 0
-	log "botified install: warning: this Core restart stopped the following enabled Gateway channel unit(s); they do not restart automatically:"
+	log "botified install: warning: this Core restart stopped the following enabled Gateway channel unit(s); they may not restart automatically:"
 	for warn_gateway_unit in $warn_gateway_matches; do
 		log "  $warn_gateway_unit"
 		if [ "$managed_scope" = user ]; then

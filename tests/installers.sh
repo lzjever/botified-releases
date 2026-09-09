@@ -2806,7 +2806,7 @@ run_managed_gateway_stop_warning_case() {
 	assert_contains "$scoped_output" 'Installed managed user service: botified.service' \
 		"$case_name scoped"
 	assert_contains "$scoped_output" \
-		'botified install: warning: this Core restart stopped the following enabled Gateway channel unit(s); they do not restart automatically:' \
+		'botified install: warning: this Core restart stopped the following enabled Gateway channel unit(s); they may not restart automatically:' \
 		"$case_name scoped"
 	assert_contains "$scoped_output" '  botified-claw-gateway-weixin.service' \
 		"$case_name scoped"
@@ -2852,7 +2852,7 @@ run_managed_gateway_stop_warning_case() {
 		exit 1
 	}
 	assert_contains "$scoped_output" \
-		'botified install: warning: this Core restart stopped the following enabled Gateway channel unit(s); they do not restart automatically:' \
+		'botified install: warning: this Core restart stopped the following enabled Gateway channel unit(s); they may not restart automatically:' \
 		"$case_name offline"
 	assert_contains "$scoped_output" '  botified-claw-gateway-weixin.service' \
 		"$case_name offline"
