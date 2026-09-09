@@ -2727,6 +2727,73 @@ run_managed_gateway_stop_warning_case() {
 	say_ok "$case_name"
 }
 
+run_guided_setup_next_step_case() {
+	case_name="managed install prints guided setup next step"
+
+	prepare_scoped_case guided-user user
+	invoke_scoped --scope user
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: user run failed\n' "$case_name" >&2
+		sed -n '1,240p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" \
+		"botified setup --config $scoped_config --workspace $scoped_workspace --overwrite (requires Core v0.4.58+)" \
+		"$case_name user"
+	assert_contains "$scoped_output" "Environment file: $scoped_env" "$case_name user"
+	if grep -F 'sudo chown root:botified' "$scoped_output" >/dev/null 2>&1; then
+		die "$case_name user output includes the system-scope ownership return line"
+	fi
+
+	prepare_scoped_case guided-system system
+	scoped_proc_uid=$scoped_botified_uid
+	scoped_proc_gid=$scoped_botified_gid
+	invoke_scoped --scope system
+	[ "$scoped_status" -eq 0 ] || {
+		printf 'not ok - %s: system run failed\n' "$case_name" >&2
+		sed -n '1,240p' "$scoped_output" >&2
+		exit 1
+	}
+	assert_contains "$scoped_output" \
+		"botified setup --config $scoped_config --workspace $scoped_workspace --overwrite (requires Core v0.4.58+)" \
+		"$case_name system"
+	assert_contains "$scoped_output" "Environment file: $scoped_env" "$case_name system"
+	assert_contains "$scoped_output" \
+		"sudo chown root:botified $scoped_config && sudo chmod 0640 $scoped_config" \
+		"$case_name system"
+
+	guided_files_output="$scoped_root/files-only-output"
+	guided_files_prefix="$scoped_root/files-only"
+	set +e
+	BOTIFIED_ASSET_DIR="$fixture_dir" \
+	PATH="$scoped_bin:$base_bin" \
+	HOME="$scoped_home" \
+	SHIM_OS=Linux \
+	SHIM_ARCH=x86_64 \
+	SHIM_VERSION="$version" \
+	SHIM_CHECKSUM_LOG="$scoped_checksum_log" \
+	SHIM_REAL_HASH="$host_hash" \
+	SHIM_REAL_HASH_KIND="$host_hash_kind" \
+	BOTIFIED_VERSION="$version" \
+	BOTIFIED_INSTALL_DIR="$guided_files_prefix/bin" \
+	BOTIFIED_SHARE_DIR="$guided_files_prefix/share/botified" \
+	BOTIFIED_DOC_DIR="$guided_files_prefix/share/doc/botified" \
+	"$host_sh" "$repo_root/install.sh" > "$guided_files_output" 2>&1
+	guided_files_status=$?
+	set -e
+	[ "$guided_files_status" -eq 0 ] || {
+		printf 'not ok - %s: files-only run failed\n' "$case_name" >&2
+		sed -n '1,200p' "$guided_files_output" >&2
+		exit 1
+	}
+	if grep -F -- '--workspace' "$guided_files_output" >/dev/null 2>&1 ||
+		grep -F -- '--overwrite' "$guided_files_output" >/dev/null 2>&1
+	then
+		die "$case_name files-only output mentions the guided managed setup command"
+	fi
+	say_ok "$case_name"
+}
+
 run_case "core Linux x86_64 prefers sha256sum via curl" install.sh Linux x86_64 curl both "$fixture_dir" success ""
 run_case "core Linux aarch64 via wget and sha256sum" install.sh Linux aarch64 wget sha256sum "$fixture_dir" success ""
 run_case "core warns when gateway needs a separate upgrade" install.sh Linux x86_64 curl sha256sum "$fixture_dir" success "" auto true
@@ -2754,6 +2821,7 @@ run_bundle_and_config_validation_case
 run_user_repeat_success_case
 run_system_first_install_success_case
 run_runtime_verification_failures
+run_guided_setup_next_step_case
 
 run_gateway_first_install_case
 run_gateway_checksum_tool_case

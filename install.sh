@@ -562,6 +562,13 @@ install_scoped() {
 	log "  $scope_binary config check --config $scope_config"
 	log "  $scope_binary health check --config $scope_config"
 	log "Provider configuration is intentionally left for the administrator."
+	log "Configure a real provider with the guided setup:"
+	log "  botified setup --config $scope_config --workspace $scope_workspace --overwrite (requires Core v0.4.58+)"
+	log "Environment file: $scope_env"
+	if [ "$managed_scope" = system ]; then
+		log "Then restore service-account access to the config:"
+		log "  sudo chown root:botified $scope_config && sudo chmod 0640 $scope_config"
+	fi
 	warn_gateway_channels
 }
 
